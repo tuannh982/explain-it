@@ -1,5 +1,5 @@
-import { BaseAgent } from '../core/agent/base-agent';
-import { Topic } from '../core/types';
+import { BaseAgent } from '../core/agent/base-agent.js';
+import { Topic } from '../core/types.js';
 
 interface ClarifierInput {
     userQuery: string;

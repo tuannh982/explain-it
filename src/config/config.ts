@@ -1,4 +1,4 @@
-import { env } from './env';
+import { env } from './env.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,10 +13,48 @@ export const config = {
     },
     llm: {
         defaults: {
-            provider: 'claude', // Default provider
-            model: 'claude-opus-4-5-20251101', // ultra-powerful model as requested
+            provider: 'claude',
+            model: 'claude-haiku-4-5-20251001', // faster, efficient model as default
             temperature: 0.7,
             maxTokens: 4096,
+        },
+        agents: {
+            clarifier: {
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.3,
+            },
+            decomposer: {
+                // model: 'claude-opus-4-5-20251101', // reasoning heavy
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.5,
+            },
+            explainer: {
+                // model: 'claude-opus-4-5-20251101', // quality heavy
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.7,
+            },
+            critic: {
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.2,
+            },
+            iterator: {
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.7,
+            },
+            builder: {
+                // model: 'claude-opus-4-5-20251101', // code generation
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.5,
+            },
+            synthesizer: {
+                // model: 'claude-opus-4-5-20251101', // integration
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.5,
+            },
+            redecomposer: {
+                model: 'claude-haiku-4-5-20251001',
+                temperature: 0.5,
+            }
         },
         providers: {
             claude: {

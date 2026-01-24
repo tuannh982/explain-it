@@ -1,5 +1,5 @@
-import { BaseAgent } from '../core/agent/base-agent';
-import { Decomposition, ScoutReport } from '../core/types';
+import { BaseAgent } from '../core/agent/base-agent.js';
+import { Decomposition, ScoutReport } from '../core/types.js';
 
 export interface ValidationIssues {
     type: 'structural' | 'semantic';

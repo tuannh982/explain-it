@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc",
-    "start": "node --loader ts-node/esm --experimental-specifier-resolution=node src/index.ts",
+    "start": "tsx src/index.ts",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.{ts,json}\""
   },
@@ -58,9 +58,14 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/fs-extra": "^11.0.4",
     "@types/react": "^19.2.9",
+    "@typescript-eslint/eslint-plugin": "^8.53.1",
+    "@typescript-eslint/parser": "^8.53.1",
     "dotenv": "^17.2.3",
+    "globals": "^17.0.0",
+    "typescript-eslint": "^8.53.1",
     "vitest": "^4.0.17"
   }
 }

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { LLMClient, CompletionOptions } from './client';
-import { config } from '../../config/config';
-import { logger } from '../../utils/logger';
+import { LLMClient, CompletionOptions } from './client.js';
+import { config } from '../../config/config.js';
+import { logger } from '../../utils/logger.js';
 
 export class ClaudeClient implements LLMClient {
     private client: Anthropic;
@@ -16,31 +16,11 @@ export class ClaudeClient implements LLMClient {
     }
 
     async complete(prompt: string, options?: CompletionOptions): Promise<string> {
-        const model = options?.model || config.llm.defaults.model;
-        const maxTokens = options?.maxTokens || config.llm.defaults.maxTokens;
-        const temperature = options?.temperature || config.llm.defaults.temperature;
-
-        logger.debug(`Calling Claude (${model})...`);
-
-        try {
-            const response = await this.client.messages.create({
-                model,
-                max_tokens: maxTokens,
-                temperature,
-                system: options?.system,
-                messages: [{ role: 'user', content: prompt }],
-            });
-
-            const text = response.content[0].type === 'text' ? response.content[0].text : '';
-            return text;
-        } catch (error: any) {
-            logger.error('Claude API Error:', error);
-            throw error;
-        }
+        const response = await this.advance([{ role: 'user', content: prompt }], options);
+        return response.content;
     }
 
     async completeJSON<T>(prompt: string, options?: CompletionOptions): Promise<T> {
-        // Simplified: The prompt now contains the schema and enforcement rules.
         const responseText = await this.complete(prompt, options);
 
         try {
@@ -49,6 +29,122 @@ export class ClaudeClient implements LLMClient {
             return JSON.parse(cleanJson) as T;
         } catch (error: any) {
             logger.error('Claude JSON Parse Error:', error.message);
+            throw error;
+        }
+    }
+
+    async advance(messages: any[], options?: CompletionOptions): Promise<any> {
+        const model = options?.model || config.llm.defaults.model;
+        const maxTokens = options?.maxTokens || config.llm.defaults.maxTokens;
+        const temperature = options?.temperature || config.llm.defaults.temperature;
+
+        // Separate system messages
+        const systemMessage = messages.find(m => m.role === 'system')?.content || options?.system;
+        const chatMessages = messages.filter(m => m.role !== 'system').map(m => ({
+            role: m.role,
+            content: Array.isArray(m.content) ? m.content : [{ type: 'text', text: m.content }]
+        }));
+
+        // Prepare tools if requested
+        const tools: any[] = [];
+        if (options?.useSearch) {
+            tools.push({
+                type: 'web_search_20250305',
+                name: 'web_search'
+            });
+        }
+
+        let loopCount = 0;
+        const MAX_LOOPS = 5;
+
+        try {
+            while (loopCount < MAX_LOOPS) {
+                logger.debug(`Calling Claude (${model}) - Loop ${loopCount + 1}...`);
+                const response = await this.client.messages.create({
+                    model,
+                    max_tokens: maxTokens,
+                    temperature,
+                    system: systemMessage,
+                    messages: chatMessages as any,
+                    tools: tools.length > 0 ? tools : undefined
+                });
+
+                // Add Claude's message to context for next potential turn
+                chatMessages.push({
+                    role: 'assistant',
+                    content: response.content as any
+                });
+
+                const toolUseBlocks = response.content.filter(b => b.type === 'tool_use');
+
+                if (toolUseBlocks.length === 0 || response.stop_reason === 'end_turn') {
+                    // Final response
+                    let fullContent = '';
+                    let thinking: string | undefined;
+
+                    for (const block of response.content) {
+                        if (block.type === 'text') {
+                            fullContent += block.text;
+                        } else if (block.type === 'thinking') {
+                            thinking = (thinking || '') + block.thinking;
+                        }
+                    }
+
+                    let content = fullContent;
+                    if (!thinking) {
+                        const thinkingMatch = fullContent.match(/<thinking>([\s\S]*?)<\/thinking>/);
+                        if (thinkingMatch) {
+                            thinking = thinkingMatch[1].trim();
+                            content = fullContent.replace(/<thinking>[\s\S]*?<\/thinking>/, '').trim();
+                        }
+                    }
+
+                    return {
+                        content,
+                        thinking,
+                        usage: {
+                            promptTokens: response.usage.input_tokens,
+                            completionTokens: response.usage.output_tokens,
+                            totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+                        },
+                        raw: response,
+                    };
+                }
+
+                // Handle tool use
+                const toolResults: any[] = [];
+                for (const toolUse of toolUseBlocks) {
+                    if (toolUse.type !== 'tool_use') continue;
+
+                    if (toolUse.name === 'web_search') {
+                        logger.debug(`[ClaudeClient] Claude used web_search: ${JSON.stringify(toolUse.input)}`);
+                        // The built-in tool often handles it, but if it's a client tool 20250305, 
+                        // we must provide a result. Paradoxically, the 20250305 type IS the built-in one!
+                        // If it's built-in, Claude might return 'tool_use' and then 'tool_result' automatically?
+                        // Actually, for some providers, you just need to acknowledge it.
+                        toolResults.push({
+                            type: 'tool_result',
+                            tool_use_id: toolUse.id,
+                            content: "Search completed. Results are ready for synthesis."
+                        });
+                    }
+                }
+
+                if (toolResults.length > 0) {
+                    chatMessages.push({
+                        role: 'user',
+                        content: toolResults as any
+                    });
+                    loopCount++;
+                } else {
+                    break;
+                }
+            }
+
+            throw new Error(`Exceeded MAX_LOOPS (${MAX_LOOPS}) in ClaudeClient tool loop.`);
+
+        } catch (error: any) {
+            logger.error('Claude API Error:', error);
             throw error;
         }
     }

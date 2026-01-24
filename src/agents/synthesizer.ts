@@ -1,5 +1,5 @@
-import { BaseAgent } from '../core/agent/base-agent';
-import { ScoutReport, Decomposition, Explanation, BuilderOutput, SynthesizerResult, ConceptNode } from '../core/types';
+import { BaseAgent } from '../core/agent/base-agent.js';
+import { ScoutReport, Decomposition, Explanation, BuilderOutput, SynthesizerResult, ConceptNode } from '../core/types.js';
 
 export class SynthesizerAgent extends BaseAgent {
     async execute(input: {
@@ -10,7 +10,7 @@ export class SynthesizerAgent extends BaseAgent {
     }): Promise<SynthesizerResult> {
 
         // Generate Index/Overview via LLM
-        const prompt = await this.prompts.loadTemplate('synthesizer', {
+        const { system, user } = await this.prompts.loadTemplate('synthesizer', {
             scoutJson: JSON.stringify(input.scoutReport, null, 2),
             decompositionJson: JSON.stringify(input.decomposition, null, 2),
             // We only pass names/summaries for the index, not full explanations to save context/focus
@@ -18,29 +18,20 @@ export class SynthesizerAgent extends BaseAgent {
             builderJson: JSON.stringify(input.builderOutput, null, 2)
         });
 
-        const indexContent = await this.llm.complete(prompt);
+        const response = await this.llm.advance([
+            { role: 'system', content: system },
+            { role: 'user', content: user }
+        ]);
+        const indexContent = response.content;
 
         // Generate Pages from Concept Tree
         // The decomposition.concepts is passed as the root of the tree (ConceptNode[])
         const rootNodes = input.decomposition.concepts as unknown as ConceptNode[];
         const pages: { id: string, title: string, fileName: string, content: string }[] = [];
 
-        const processNode = (node: ConceptNode, parentPath: string) => {
-            const safeName = node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
-            // Determine file path
-            let currentPath: string;
-            let fileName: string;
-
-            if (node.children && node.children.length > 0) {
-                // Directory/Category
-                currentPath = parentPath ? `${parentPath}/${safeName}` : safeName;
-                fileName = `${currentPath}/index.md`;
-            } else {
-                // Leaf
-                currentPath = parentPath;
-                fileName = parentPath ? `${parentPath}/${safeName}.md` : `${safeName}.md`;
-            }
+        const processNode = (node: ConceptNode) => {
+            // Respect the path calculated during decomposition
+            const fileName = node.relativeFilePath || `${this.slugify(node.name)}.md`;
 
             // Generate Content (reuse existing format)
             if (node.explanation) {
@@ -78,8 +69,8 @@ ${exp.codeExample ? `## Code Example\n\`\`\`${exp.codeExample.language}\n${exp.c
 
 ${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
 
-## Check Understanding
-${exp.checkUnderstanding.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+## Check Your Understanding
+${(exp.checkUnderstanding || []).map((q, i) => `${i + 1}. ${q}`).join('\n')}
 `;
 
                 pages.push({
@@ -92,11 +83,11 @@ ${exp.checkUnderstanding.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
             // Recurse
             if (node.children) {
-                node.children.forEach(child => processNode(child, parentPath ? `${parentPath}/${safeName}` : safeName));
+                node.children.forEach(child => processNode(child));
             }
         };
 
-        rootNodes.forEach(node => processNode(node, ''));
+        rootNodes.forEach(node => processNode(node));
 
         // Calculate stats
         const totalWordCount = indexContent.split(/\s+/).length + pages.reduce((acc, p) => acc + p.content.split(/\s+/).length, 0);
@@ -114,5 +105,9 @@ ${exp.checkUnderstanding.map((q, i) => `${i + 1}. ${q}`).join('\n')}
                 readingTime
             }
         };
+    }
+
+    private slugify(text: string): string {
+        return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     }
 }

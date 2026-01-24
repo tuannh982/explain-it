@@ -85,6 +85,7 @@ export interface Concept {
 export interface ConceptNode extends Concept {
     children?: ConceptNode[];
     explanation?: Explanation;
+    relativeFilePath?: string;
 }
 
 export interface Decomposition {

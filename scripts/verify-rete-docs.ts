@@ -1,4 +1,4 @@
-import { Orchestrator } from '../src/core/orchestrator';
+import { Orchestrator } from '../src/core/orchestrator.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,7 +12,7 @@ async function main() {
     const orchestrator = new Orchestrator(outputDir);
 
     try {
-        const result = await orchestrator.start("I want to learn about rete network");
+        const result = await orchestrator.start("Rete algorithm");
         console.log("Orchestrator completed successfully.");
         console.log("Result summary (Index):", result.indexContent.substring(0, 200) + "...");
         console.log("Pages generated:", result.pages.length);

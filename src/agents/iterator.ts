@@ -1,5 +1,5 @@
-import { BaseAgent } from '../core/agent/base-agent';
-import { Explanation, Critique } from '../core/types';
+import { BaseAgent } from '../core/agent/base-agent.js';
+import { Explanation, Critique } from '../core/types.js';
 
 export interface IterationResult {
     iteration: number;

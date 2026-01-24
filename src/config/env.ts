@@ -13,4 +13,16 @@ const envSchema = z.object({
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 
-export const env = envSchema.parse(process.env);
+let parsedEnv: any;
+try {
+    parsedEnv = envSchema.parse(process.env);
+} catch (error: any) {
+    if (error.name === 'ZodError') {
+        console.error('Environment validation failed:', JSON.stringify(error.errors, null, 2));
+    } else {
+        console.error('Environment loading failed:', error);
+    }
+    process.exit(1);
+}
+
+export const env = parsedEnv;

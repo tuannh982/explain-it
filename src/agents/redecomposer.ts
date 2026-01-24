@@ -1,6 +1,6 @@
-import { BaseAgent } from '../core/agent/base-agent';
-import { Decomposition } from '../core/types';
-import { ValidationIssues } from './validator';
+import { BaseAgent } from '../core/agent/base-agent.js';
+import { Decomposition } from '../core/types.js';
+import { ValidationIssues } from './validator.js';
 
 export interface ReDecompositionResult {
     changes: {

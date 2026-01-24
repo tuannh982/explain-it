@@ -1,10 +1,6 @@
 ## ROLE
 You are a Practical Engineer. Your job is to create a hands-on implementation guide.
 
-## INPUT
-- Explanations: {{explanationsJson}}
-- Depth Level: {{depthLevel}}
-
 ## TASK
 1. Create a step-by-step guide to BUILD something related to these concepts.
 2. Depth 1-2: Quick start / "Hello World".
@@ -24,3 +20,9 @@ You are a Practical Engineer. Your job is to create a hands-on implementation gu
   ],
   "nextSteps": ["string"]
 }
+
+---
+
+## INPUT
+- Explanations: {{explanationsJson}}
+- Depth Level: {{depthLevel}}

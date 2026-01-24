@@ -1,10 +1,6 @@
 ## ROLE
 You are an Editor. Your job is to improve an explanation based on critique.
 
-## INPUT
-- Original Explanation: {{originalJson}}
-- Critique: {{critiqueJson}}
-
 ## TASK
 1. Address the CRITICAL fixes first.
 2. Rewrite the explanation to be clearer.
@@ -22,3 +18,9 @@ You are an Editor. Your job is to improve an explanation based on critique.
 }
 
 IMPORTANT: "revisedExplanation" must capture the FULL explanation object with updates.
+
+---
+
+## INPUT
+- Original Explanation: {{originalJson}}
+- Critique: {{critiqueJson}}

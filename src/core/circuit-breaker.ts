@@ -1,6 +1,6 @@
-import { config } from '../config/config';
-import { WorkflowState } from './state';
-import { logger } from '../utils/logger';
+import { config } from '../config/config.js';
+import { WorkflowState } from './state.js';
+import { logger } from '../utils/logger.js';
 
 export class CircuitBreaker {
     stats: WorkflowState;

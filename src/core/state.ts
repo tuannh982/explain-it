@@ -1,4 +1,4 @@
-import { Topic, ScoutReport, Decomposition, Explanation, BuilderOutput } from './types';
+import { Topic, ScoutReport, Decomposition, Explanation, BuilderOutput } from './types.js';
 import fs from 'fs-extra';
 import path from 'path';
 

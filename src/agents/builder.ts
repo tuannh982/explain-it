@@ -1,5 +1,5 @@
-import { BaseAgent } from '../core/agent/base-agent';
-import { Explanation, BuilderOutput } from '../core/types';
+import { BaseAgent } from '../core/agent/base-agent.js';
+import { Explanation, BuilderOutput } from '../core/types.js';
 
 export class BuilderAgent extends BaseAgent {
     async execute(input: { explanations: Explanation[], depthLevel: number }): Promise<BuilderOutput> {
