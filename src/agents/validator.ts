@@ -23,7 +23,7 @@ export class ValidatorAgent extends BaseAgent {
     async execute(input: { topic: string, scoutReport: ScoutReport, decomposition: Decomposition }): Promise<ValidationResult> {
         const scoutContext = `Category: ${input.scoutReport.category}. Elevator Pitch: ${input.scoutReport.elevatorPitch}`;
 
-        return this.executeLLM<ValidationResult>('validator', {
+        return this.executeLLMWithTemplate<ValidationResult>('validator', {
             topic: input.topic,
             scoutContext: scoutContext,
             decompositionJson: JSON.stringify(input.decomposition, null, 2)

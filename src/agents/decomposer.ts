@@ -11,7 +11,7 @@ export class DecomposerAgent extends BaseAgent {
         // Reduced context to prevent repetitive decomposition of parent concepts
         const scoutContext = `Parent Context (Category): ${input.scoutReport.category}.${input.parentConcepts ? ` Already covered/Parent concepts: ${input.parentConcepts.join(', ')}.` : ''}`;
 
-        const result = await this.executeLLM<Decomposition>('decomposer', {
+        const result = await this.executeLLMWithTemplate<Decomposition>('decomposer', {
             topic: input.topic,
             depthLevel: input.depthLevel,
             scoutContext: scoutContext

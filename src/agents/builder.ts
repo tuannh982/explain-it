@@ -10,7 +10,7 @@ export class BuilderAgent extends BaseAgent {
             why: e.whyExists
         }));
 
-        return this.executeLLM<BuilderOutput>('builder', {
+        return this.executeLLMWithTemplate<BuilderOutput>('builder', {
             explanationsJson: JSON.stringify(simplifiedExplanations, null, 2),
             depthLevel: input.depthLevel
         });

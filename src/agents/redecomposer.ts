@@ -14,7 +14,7 @@ export interface ReDecompositionResult {
 
 export class ReDecomposerAgent extends BaseAgent {
     async execute(input: { decomposition: Decomposition, issues: ValidationIssues[] }): Promise<ReDecompositionResult> {
-        return this.executeLLM<ReDecompositionResult>('redecomposer', {
+        return this.executeLLMWithTemplate<ReDecompositionResult>('redecomposer', {
             decompositionJson: JSON.stringify(input.decomposition, null, 2),
             issuesJson: JSON.stringify(input.issues, null, 2)
         });

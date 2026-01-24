@@ -20,7 +20,7 @@ export interface ClarifierResult {
 
 export class ClarifierAgent extends BaseAgent {
     async execute(input: ClarifierInput): Promise<ClarifierResult> {
-        return this.executeLLM<ClarifierResult>('clarifier', {
+        return this.executeLLMWithTemplate<ClarifierResult>('clarifier', {
             userQuery: input.userQuery
         });
     }

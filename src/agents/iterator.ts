@@ -13,7 +13,7 @@ export interface IterationResult {
 
 export class IteratorAgent extends BaseAgent {
     async execute(input: { explanation: Explanation, critique: Critique, iteration: number }): Promise<IterationResult> {
-        return this.executeLLM<IterationResult>('iterator', {
+        return this.executeLLMWithTemplate<IterationResult>('iterator', {
             originalJson: JSON.stringify(input.explanation, null, 2),
             critiqueJson: JSON.stringify(input.critique, null, 2)
         });

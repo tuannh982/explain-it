@@ -10,7 +10,7 @@ export class SynthesizerAgent extends BaseAgent {
     }): Promise<SynthesizerResult> {
 
         // Generate Index/Overview via LLM
-        const { system, user } = await this.prompts.loadTemplate('synthesizer', {
+        const conversation = await this.templateRenderer.render('synthesizer', {
             scoutJson: JSON.stringify(input.scoutReport, null, 2),
             decompositionJson: JSON.stringify(input.decomposition, null, 2),
             // We only pass names/summaries for the index, not full explanations to save context/focus
@@ -18,10 +18,7 @@ export class SynthesizerAgent extends BaseAgent {
             builderJson: JSON.stringify(input.builderOutput, null, 2)
         });
 
-        const response = await this.llm.advance([
-            { role: 'system', content: system },
-            { role: 'user', content: user }
-        ]);
+        const response = await this.executeLLM(conversation);
         const indexContent = response.content;
 
         // Generate Pages from Concept Tree

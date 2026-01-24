@@ -91,5 +91,10 @@ export const config = {
             'geeksforgeeks.org',
             'tutorialspoint.com'
         ]
+    },
+    retry: {
+        maxRetries: 3,
+        backoffMs: 1000,
+        logFile: 'output/logs/llm-failures.jsonl'
     }
 };

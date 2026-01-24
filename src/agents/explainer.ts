@@ -12,7 +12,7 @@ export class ExplainerAgent extends BaseAgent {
 
         const previous = input.previousConcepts.length > 0 ? input.previousConcepts.join(', ') : 'None (First concept)';
 
-        return this.executeLLM<Explanation>('explainer', {
+        return this.executeLLMWithTemplate<Explanation>('explainer', {
             conceptName: conceptName,
             conceptOneLiner: conceptOneLiner,
             depthLevel: input.depthLevel,
