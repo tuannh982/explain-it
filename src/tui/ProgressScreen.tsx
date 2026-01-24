@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
-import { EventSystem } from '../core/events';
+import { EventSystem } from '../core/events.js';
 
 interface ProgressScreenProps {
     events: EventSystem;

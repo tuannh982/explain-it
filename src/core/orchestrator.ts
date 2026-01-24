@@ -171,16 +171,19 @@ export class Orchestrator {
         logger.info(`[Decomposition Loop] Decomposer returned ${decomposition.concepts.length} concepts for "${topic}"`);
         logger.info(`[Decomposition Loop] Concepts: ${currentLevelConcepts.join(', ')}`);
 
-        let index = 0;
-        for (const concept of decomposition.concepts) {
-
-            // Avoid repeating ancestors
-            if (concept.name.toLowerCase() === topic.toLowerCase() || parentConcepts.some(p => p.toLowerCase() === concept.name.toLowerCase())) {
-                logger.debug(`[Decomposition Loop] Skipping repetitive concept: ${concept.name}`);
-                continue;
+        // Pre-filter concepts to avoid repeating ancestors and ensure sequential numbering
+        const filteredConcepts = decomposition.concepts.filter(concept => {
+            const isRepetitive = concept.name.toLowerCase() === topic.toLowerCase() ||
+                parentConcepts.some(p => p.toLowerCase() === concept.name.toLowerCase());
+            if (isRepetitive) {
+                logger.debug(`[Decomposition Loop] Filtering out repetitive concept: ${concept.name}`);
             }
+            return !isRepetitive;
+        });
 
-            index++;
+        for (let i = 0; i < filteredConcepts.length; i++) {
+            const concept = filteredConcepts[i];
+            const index = i + 1;
             const currentSection = sectionPrefix ? `${sectionPrefix}_${index}` : `${index}`;
             logger.info(`[Decomposition Loop] [${currentSection}] Processing: "${concept.name}"`);
 
@@ -188,24 +191,37 @@ export class Orchestrator {
             const slugBase = this.mkdocs.slugify(concept.name);
             const slug = `${currentSection}_${slugBase}`;
 
-            // Define path based on atomic vs complex
-            if (!concept.isAtomic && currentDepth < Math.max(1, Math.min(depth - 1, 3))) {
+            // At currentDepth === 0 (top-level), ALWAYS create folder structure for every concept
+            const isTopLevel = currentDepth === 0;
+            const isWithinDepth = currentDepth < Math.max(1, Math.min(depth - 1, 3));
+            const shouldCreateFolder = isTopLevel || isWithinDepth;
+
+            if (shouldCreateFolder) {
                 const subDirPath = path.join(currentPath, slug);
-                logger.debug(`[Decomposition Loop] [${currentSection}] COMPLEX node. subDirPath: ${subDirPath}`);
+                logger.debug(`[Decomposition Loop] [${currentSection}] Creating folder structure. subDirPath: ${subDirPath}`);
                 await this.mkdocs.ensureDirectory(subDirPath, this.outputDir);
                 node.relativeFilePath = path.join(subDirPath, 'index.md');
 
-                logger.info(`[Decomposition Loop] [${currentSection}] Recursing into "${concept.name}"...`);
-                const nextParentConcepts = [...parentConcepts, topic, ...currentLevelConcepts.filter(c => c !== concept.name)];
-                node.children = await this.decomposeRecursively(concept.name, depth, scoutReport, currentDepth + 1, nextParentConcepts, subDirPath, currentSection);
+                // Only recurse if not atomic and within depth limit
+                if (!concept.isAtomic && isWithinDepth) {
+                    logger.info(`[Decomposition Loop] [${currentSection}] Recursing into "${concept.name}"...`);
+                    // ONLY pass ancestors to parentConcepts to avoid over-aggressive filtering of siblings
+                    const nextParentConcepts = [...parentConcepts, topic];
+                    node.children = await this.decomposeRecursively(concept.name, depth, scoutReport, currentDepth + 1, nextParentConcepts, subDirPath, currentSection);
 
-                if (!node.children || node.children.length === 0) {
+                    if (!node.children || node.children.length === 0) {
+                        // No children returned, but keep folder structure - just make it a leaf with index.md
+                        node.isAtomic = true;
+                        delete node.children;
+                        logger.info(`[Decomposition Loop] [${currentSection}] Sub-decomposition returned no children. Keeping folder with index.md at: ${node.relativeFilePath}`);
+                    }
+                } else {
+                    // Top-level atomic node: folder with index.md but no recursion
                     node.isAtomic = true;
-                    node.relativeFilePath = path.join(currentPath, `${slug}.md`);
-                    delete node.children;
-                    logger.info(`[Decomposition Loop] [${currentSection}] Sub-decomposition returned no children. Treating as atomic at: ${node.relativeFilePath}`);
+                    logger.info(`[Decomposition Loop] [${currentSection}] Top-level node with folder structure. Path: ${node.relativeFilePath}`);
                 }
             } else {
+                // Deep-level atomic node: just a .md file
                 node.isAtomic = true;
                 node.relativeFilePath = path.join(currentPath, `${slug}.md`);
                 logger.info(`[Decomposition Loop] [${currentSection}] ATOMIC node. Path: ${node.relativeFilePath}`);

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Box } from 'ink';
-import { InputScreen, UserInput } from './InputScreen';
-import { ProgressScreen } from './ProgressScreen';
-import { OutputScreen } from './OutputScreen';
-import { ErrorScreen } from './ErrorScreen';
-import { Orchestrator } from '../core/orchestrator';
-import { config } from '../config/config';
+import { InputScreen, UserInput } from './InputScreen.js';
+import { ProgressScreen } from './ProgressScreen.js';
+import { OutputScreen } from './OutputScreen.js';
+import { ErrorScreen } from './ErrorScreen.js';
+import { Orchestrator } from '../core/orchestrator.js';
+import { config } from '../config/config.js';
 
 export const App = () => {
     const [screen, setScreen] = useState<'input' | 'progress' | 'output' | 'error'>('input');
