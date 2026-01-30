@@ -57,7 +57,7 @@ ${exp.imaginationScenario ? `## Imagination Scenario\n${exp.imaginationScenario}
 
 ${exp.whyExists ? `## Why It Exists\n**Before**: ${exp.whyExists.before}\n\n**Pain**: ${exp.whyExists.pain}\n\n**After**: ${exp.whyExists.after}\n` : ''}
 
-${exp.diagram ? `## Diagram\n![${exp.diagram.caption}](mermaid)\n\`\`\`mermaid\n${exp.diagram.mermaidCode}\n\`\`\`\n` : ''}
+${exp.diagram ? `## Diagram\n\`\`\`mermaid\n${exp.diagram.mermaidCode}\n\`\`\`\n\n${exp.diagram.caption}\n---\n` : ''}
 
 ${exp.complexity ? `**Complexity**: ${exp.complexity.replace('_', ' ')}\n` : ''}
 ${exp.prerequisites && exp.prerequisites.length > 0 ? `**Prerequisites**: ${exp.prerequisites.join(', ')}\n` : ''}

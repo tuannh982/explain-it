@@ -71,7 +71,7 @@ export const config = {
     paths: {
         root: path.resolve(__dirname, '../../'),
         output: path.resolve(__dirname, '../../output'),
-        prompts: path.resolve(__dirname, '../prompts'),
+        prompts: path.resolve(__dirname, '../templates/prompts'),
     },
     circuitBreaker: {
         maxValidationAttempts: 2,

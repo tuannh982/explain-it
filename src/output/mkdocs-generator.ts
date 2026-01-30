@@ -48,9 +48,14 @@ export class MkDocsGenerator {
     }
 
     // 3. Generate final mkdocs.yml with full nav
+    // 3. Generate final mkdocs.yml with full nav
     const nav = [
-      { Home: 'index.md' },
-      ...this.buildNavFromPages(result.pages)
+      {
+        Home: [
+          { Overview: 'index.md' },
+          ...this.buildNavFromPages(result.pages)
+        ]
+      }
     ];
 
     await this.writeConfig(topic, outputDir, nav);
@@ -99,9 +104,52 @@ ${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
   }
 
   private buildNavFromPages(pages: any[]): any[] {
-    // This is a simplified nav builder. In the future, we can make it more sophisticated
-    // based on the actual file hierarchy.
-    return pages.map(page => ({ [page.title]: page.fileName }));
+    // Map directory paths to their corresponding pages
+    const nodes = new Map<string, { page: any; children: any[] }>();
+
+    // Initial pass: Create nodes for all pages
+    pages.forEach((page) => {
+      // Assuming fileName is like "folder/index.md", we use the folder as the key
+      const dir = path.dirname(page.fileName);
+      nodes.set(dir, { page, children: [] });
+    });
+
+    const roots: any[] = [];
+
+    // Build the tree hierarchy
+    // Sort directories to ensure deterministic order (e.g. 1_, 1_1_, 2_)
+    const sortedDirs = Array.from(nodes.keys()).sort();
+
+    sortedDirs.forEach((dir) => {
+      const node = nodes.get(dir)!;
+      const parentDir = path.dirname(dir);
+
+      if (nodes.has(parentDir)) {
+        nodes.get(parentDir)!.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    // Recursive function to format the nav structure
+    const buildTree = (node: any): any => {
+      // Leaf node: just the page
+      if (node.children.length === 0) {
+        return { [node.page.title]: node.page.fileName };
+      }
+
+      // Branch node: Section with Overview + Children
+      const childrenNav = node.children.map((child: any) => buildTree(child));
+
+      return {
+        [node.page.title]: [
+          { 'Overview': node.page.fileName },
+          ...childrenNav
+        ]
+      };
+    };
+
+    return roots.map((root) => buildTree(root));
   }
 
   async writeConfig(topic: string, outputDir: string, nav: any[]): Promise<void> {
@@ -129,6 +177,7 @@ theme:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.footer
     - content.code.copy
     - content.code.annotate
 

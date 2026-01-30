@@ -1,8 +1,7 @@
-import fs from 'fs-extra';
 import path from 'path';
-import handlebars from 'handlebars';
 import { config } from '../../config/config.js';
 import { logger } from '../../utils/logger.js';
+import { TemplateManager } from '../../output/template-manager.js';
 
 export interface PromptTemplate {
     system: string;
@@ -11,18 +10,20 @@ export interface PromptTemplate {
 
 export class PromptManager {
     private provider: string;
+    private templateManager: TemplateManager;
 
     constructor(provider: string = 'claude') {
         this.provider = provider;
+        this.templateManager = new TemplateManager(config.paths.root);
     }
 
     async loadTemplate(templateName: string, variables: Record<string, any> = {}): Promise<PromptTemplate> {
-        const templatePath = path.join(config.paths.prompts, this.provider, `${templateName}.md`);
-
         try {
-            const templateContent = await fs.readFile(templatePath, 'utf-8');
-            const compiledTemplate = handlebars.compile(templateContent);
-            const fullPrompt = compiledTemplate(variables);
+            // TemplateManager root is src/templates
+            // Prompts are in src/templates/prompts/{provider}/{templateName}.md
+            const relativePath = path.join('prompts', this.provider, `${templateName}.md`);
+
+            const fullPrompt = await this.templateManager.render(relativePath, variables);
 
             const [system, user] = fullPrompt.split('---').map(part => part.trim());
 

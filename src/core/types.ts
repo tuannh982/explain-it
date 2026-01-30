@@ -1,9 +1,7 @@
-export type DepthLevel = 1 | 2 | 3 | 4 | 5;
-
 export interface Topic {
     originalQuery: string;
     confirmedTopic: string;
-    depthLevel: DepthLevel;
+    depthLevel: number;
     focus?: string;
     userLevel?: string;
     isClear: boolean;
@@ -90,7 +88,7 @@ export interface ConceptNode extends Concept {
 }
 
 export interface Decomposition {
-    depthLevel: DepthLevel;
+    depthLevel: number;
     totalConcepts: number;
     concepts: Concept[]; // Flat list of current level
     learningSequence: string[]; // IDs in order

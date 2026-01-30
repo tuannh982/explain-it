@@ -15,7 +15,7 @@ export interface ClarifierResult {
         options: string[];
     }[];
     suggestedDepth: 1 | 2 | 3 | 4 | 5;
-    confirmedTopic: string | null;
+    confirmedTopic: string;
 }
 
 export class ClarifierAgent extends BaseAgent {
