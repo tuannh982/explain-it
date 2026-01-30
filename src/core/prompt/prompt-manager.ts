@@ -1,7 +1,7 @@
 import path from 'path';
 import { config } from '../../config/config.js';
 import { logger } from '../../utils/logger.js';
-import { TemplateManager } from '../../output/template-manager.js';
+import { TemplateManager } from '../../generator/template-manager.js';
 
 export interface PromptTemplate {
     system: string;

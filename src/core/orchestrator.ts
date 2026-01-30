@@ -17,8 +17,8 @@ import { ReDecomposerAgent } from '../agents/redecomposer.js';
 import { BuilderAgent } from '../agents/builder.js';
 import { SynthesizerAgent } from '../agents/synthesizer.js';
 
-import { MkDocsGenerator } from '../output/mkdocs-generator.js';
-import { TemplateManager } from '../output/template-manager.js';
+import { MkDocsGenerator } from '../generator/mkdocs-generator.js';
+import { TemplateManager } from '../generator/template-manager.js';
 import { config } from '../config/config.js';
 
 interface DecomposeTask {
