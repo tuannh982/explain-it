@@ -5,7 +5,9 @@ export type EventType =
     | 'phase_complete'
     | 'step_progress'
     | 'error'
-    | 'warning';
+    | 'warning'
+    | 'node_discovered'
+    | 'node_status_update';
 
 export interface EventPayload {
     timestamp: number;

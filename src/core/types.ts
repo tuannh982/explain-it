@@ -86,6 +86,7 @@ export interface ConceptNode extends Concept {
     children?: ConceptNode[];
     explanation?: Explanation;
     relativeFilePath?: string;
+    status: 'pending' | 'in-progress' | 'done' | 'failed';
 }
 
 export interface Decomposition {
@@ -93,8 +94,12 @@ export interface Decomposition {
     totalConcepts: number;
     concepts: Concept[]; // Flat list of current level
     learningSequence: string[]; // IDs in order
-    inScope: string[];
-    outOfScope: string[];
+    inScope?: string[];
+    outOfScope?: string[];
+    reflection?: {
+        domainCorrectnessScore: number;
+        reasoning: string;
+    };
 }
 
 export interface Critique {

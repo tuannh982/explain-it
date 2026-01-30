@@ -204,84 +204,31 @@ export class Orchestrator {
 
         // The root concept itself is already explained in scoutReport and written to index.md
         // So we start by decomposing the root topic to find the first level of concepts.
+        const rootNode: ConceptNode = {
+            id: 'root',
+            name: rootTopic,
+            oneLiner: scoutReport.elevatorPitch || '',
+            isAtomic: false,
+            dependsOn: [],
+            status: 'done',
+            explanation: scoutReport
+        };
+        this.events.emit('node_discovered', { data: { node: rootNode, parentId: null } });
+
         const rootTask = queue.shift()!;
         await this.decomposeToQueue(rootTask, totalDepth, scoutReport, queue);
 
-        // Now process the queue: Explain then Decompose (if needed)
+        // Now process the queue in parallel batches (siblings/independent branches)
         while (queue.length > 0) {
-            const task = queue.shift()!;
-            const { topic, currentDepth, parentConcepts, currentPath, sectionPrefix, targetNodes } = task;
+            const batch = queue.splice(0, 5); // Process up to 5 concepts in parallel
+            logger.info(`[Unified Loop] Processing batch of ${batch.length} tasks...`);
 
-            logger.info(`[Unified Loop] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`);
-            this.events.emit('step_progress', { message: `Explaining: ${topic}` });
+            const results = await Promise.all(batch.map(task => this.processSingleTask(task, totalDepth, scoutReport, queue)));
 
-            // 1. Create directory
-            const slugBase = this.mkdocs.slugify(topic);
-            const slug = `${sectionPrefix}_${slugBase}`;
-            const subDirPath = path.join(currentPath, slug);
-            await this.mkdocs.ensureDirectory(subDirPath, this.outputDir);
-
-            // 2. Explain
-            const node: ConceptNode = {
-                id: slug, // Use slug as ID for simplicity
-                name: topic,
-                oneLiner: "", // Will be filled by explainer or kept empty
-                isAtomic: true,
-                dependsOn: [],
-                relativeFilePath: path.join(subDirPath, 'index.md')
-            };
-
-            let explanation = await this.explainer.execute({
-                concept: node,
-                depthLevel: totalDepth,
-                previousConcepts: parentConcepts
-            });
-
-            // Critic Loop
-            let passed = false;
-            let iterations = 0;
-            while (!passed && iterations < 2) {
-                const critique = await this.critic.execute({ explanation, conceptName: topic, depthLevel: totalDepth });
-                if (critique.verdict === 'PASS') {
-                    passed = true;
-                } else {
-                    logger.info(`[Unified Loop] Critic requested revision for: ${topic} (Iteration ${iterations + 1})`);
-                    const iterationResult = await this.iterator.execute({ explanation, critique, iteration: iterations + 1 });
-                    explanation = iterationResult.revisedExplanation;
-                    iterations++;
-                }
-            }
-            node.explanation = explanation;
-
-            // 3. Write index.md immediately
-            await this.writeIncrementalPage(explanation, node.relativeFilePath);
-
-            // 4. Update State
-            const currentState = this.stateManager.getState();
-            this.stateManager.updateState({
-                explanations: {
-                    ...currentState.explanations,
-                    [topic]: explanation
-                },
-                explainedConcepts: [...currentState.explainedConcepts, topic]
-            });
-
-            targetNodes.push(node);
-
-            // 5. Decompose (if depth allows)
-            if (currentDepth < totalDepth) {
-                node.children = [];
-                await this.decomposeToQueue({
-                    ...task,
-                    topic: topic,
-                    currentDepth: currentDepth,
-                    currentPath: subDirPath,
-                    sectionPrefix: sectionPrefix,
-                    targetNodes: node.children,
-                }, totalDepth, scoutReport, queue);
-
-                if (node.children.length > 0) {
-                    node.isAtomic = false;
+            // Add results to their targetNodes in the correct order
+            for (let i = 0; i < batch.length; i++) {
+                if (results[i]) {
+                    batch[i].targetNodes.push(results[i]!);
                 }
             }
         }
@@ -289,10 +236,84 @@ export class Orchestrator {
         return rootNodes;
     }
 
+    private async processSingleTask(task: DecomposeTask, totalDepth: number, scoutReport: any, queue: DecomposeTask[]): Promise<ConceptNode | null> {
+        const { topic, currentDepth, parentConcepts, currentPath, sectionPrefix } = task;
+
+        logger.info(`[Unified Loop] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`);
+        this.events.emit('step_progress', { message: `Explaining: ${topic}` });
+
+        // 1. Create directory
+        const slugBase = this.mkdocs.slugify(topic);
+        const slug = `${sectionPrefix}_${slugBase}`;
+        const subDirPath = path.join(currentPath, slug);
+        await this.mkdocs.ensureDirectory(subDirPath, this.outputDir);
+
+        // 2. Build Node
+        const node: ConceptNode = {
+            id: slug,
+            name: topic,
+            oneLiner: "",
+            isAtomic: true,
+            dependsOn: [],
+            relativeFilePath: path.join(subDirPath, 'index.md'),
+            status: 'pending'
+        };
+
+        // 3. Explain
+        this.events.emit('node_status_update', { data: { nodeId: slug, status: 'in-progress' } });
+        let explanation = await this.explainer.execute({
+            concept: node,
+            depthLevel: totalDepth,
+            previousConcepts: parentConcepts
+        });
+
+        // 4. Critic Loop
+        let passed = false;
+        let iterations = 0;
+        while (!passed && iterations < 2) {
+            const critique = await this.critic.execute({ explanation, conceptName: topic, depthLevel: totalDepth });
+            if (critique.verdict === 'PASS') {
+                passed = true;
+            } else {
+                logger.info(`[Unified Loop] Critic requested revision for: ${topic} (Iteration ${iterations + 1})`);
+                const iterationResult = await this.iterator.execute({ explanation, critique, iteration: iterations + 1 });
+                explanation = iterationResult.revisedExplanation;
+                iterations++;
+            }
+        }
+        node.explanation = explanation;
+        this.events.emit('node_status_update', { data: { nodeId: slug, status: 'done' } });
+
+        // 5. Write index.md immediately
+        await this.writeIncrementalPage(explanation, node.relativeFilePath);
+
+        // 6. Update State
+        this.stateManager.addExplanation(topic, explanation);
+
+        // 7. Decompose (if depth allows)
+        if (currentDepth < totalDepth) {
+            node.children = [];
+            await this.decomposeToQueue({
+                ...task,
+                topic: topic,
+                currentDepth: currentDepth,
+                currentPath: subDirPath,
+                sectionPrefix: sectionPrefix,
+                targetNodes: node.children,
+            }, totalDepth, scoutReport, queue);
+
+            if (node.children.length > 0) {
+                node.isAtomic = false;
+            }
+        }
+
+        return node;
+    }
+
     private async decomposeToQueue(task: DecomposeTask, totalDepth: number, scoutReport: any, queue: DecomposeTask[]) {
         const { topic, currentDepth, parentConcepts, currentPath, sectionPrefix, rootTopic } = task;
 
-        const decomposition = await this.decomposer.execute({
+        let decomposition = await this.decomposer.execute({
             topic,
             depthLevel: totalDepth,
             scoutReport,
@@ -300,6 +321,27 @@ export class Orchestrator {
             rootTopic,
             alreadyExplored: Array.from(this.exploredConcepts)
         });
+
+        // SMART VALIDATION: Only call external validator if self-reflection confidence is low
+        const selfScore = decomposition.reflection?.domainCorrectnessScore || 10;
+        if (selfScore < 8) {
+            logger.info(`[Decomposer] Low self-reflection score (${selfScore}) for "${topic}". Invoking ValidatorAgent...`);
+            const validation = await this.validator.execute({
+                topic,
+                rootTopic,
+                scoutReport,
+                decomposition
+            });
+
+            if (validation.verdict === 'NEEDS_REDECOMPOSITION') {
+                logger.warn(`[Validator] Needs re-decomposition: ${validation.recommendation}`);
+                const redecomp = await this.redecomposer.execute({
+                    decomposition,
+                    issues: validation.issues
+                });
+                decomposition = redecomp.newDecomposition;
+            }
+        }
 
         const filteredConcepts = decomposition.concepts.filter(concept => {
             const isRepetitive = concept.name.toLowerCase() === topic.toLowerCase() ||
@@ -310,7 +352,7 @@ export class Orchestrator {
             return true;
         });
 
-        // NEW: Sort by learningSequence if available
+        // Sort by learningSequence if available
         if (decomposition.learningSequence && decomposition.learningSequence.length > 0) {
             const seq = decomposition.learningSequence;
             filteredConcepts.sort((a, b) => {
@@ -327,13 +369,23 @@ export class Orchestrator {
             const index = i + 1;
             const currentSection = sectionPrefix ? `${sectionPrefix}_${index}` : `${index}`;
 
+            const conceptNode: ConceptNode = {
+                id: currentSection,
+                name: concept.name,
+                oneLiner: concept.oneLiner,
+                isAtomic: concept.isAtomic,
+                dependsOn: concept.dependsOn,
+                status: 'pending'
+            };
+            this.events.emit('node_discovered', { data: { node: conceptNode, parentId: task.sectionPrefix || 'root' } });
+
             queue.push({
                 topic: concept.name,
                 currentDepth: currentDepth + 1,
                 parentConcepts: [...parentConcepts, topic],
                 currentPath: currentPath,
                 sectionPrefix: currentSection,
-                targetNodes: task.targetNodes, // Crucial: push siblings into the same array
+                targetNodes: task.targetNodes,
                 rootTopic
             });
         }
@@ -376,7 +428,7 @@ ${explanation.codeExample ? `## Code Example (${explanation.codeExample.language
 ${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
 
 ## Check Your Understanding
-${(explanation.checkUnderstanding || []).filter(q => !!q).map(q => `- ${q}`).join('\n')}
+${(Array.isArray(explanation.checkUnderstanding) ? explanation.checkUnderstanding : []).filter(q => !!q).map(q => `- ${q}`).join('\n')}
         `.trim();
 
         await this.mkdocs.writePage(fileName, content, this.outputDir);

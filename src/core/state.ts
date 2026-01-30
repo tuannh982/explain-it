@@ -64,6 +64,15 @@ export class StateManager {
         this.saveState();
     }
 
+    addExplanation(topic: string, explanation: Explanation) {
+        this.state.explanations = {
+            ...this.state.explanations,
+            [topic]: explanation
+        };
+        this.state.explainedConcepts = [...this.state.explainedConcepts, topic];
+        this.saveState();
+    }
+
     async saveState() {
         await fs.ensureDir(path.dirname(this.filePath));
         await fs.writeJSON(this.filePath, this.state, { spaces: 2 });
