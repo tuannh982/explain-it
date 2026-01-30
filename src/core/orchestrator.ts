@@ -19,10 +19,21 @@ import { SynthesizerAgent } from '../agents/synthesizer.js';
 
 import { MkDocsGenerator } from '../output/mkdocs-generator.js';
 
+interface DecomposeTask {
+    topic: string;
+    currentDepth: number;
+    parentConcepts: string[];
+    currentPath: string;
+    sectionPrefix: string;
+    targetNodes: ConceptNode[];
+    rootTopic: string;
+}
+
 export class Orchestrator {
     private stateManager: StateManager;
     private events: EventSystem;
     private circuitBreaker: CircuitBreaker;
+    private exploredConcepts = new Set<string>();
 
     // Agents
     private clarifier = new ClarifierAgent();
@@ -50,7 +61,7 @@ export class Orchestrator {
         return this.events;
     }
 
-    async start(initialQuery: string) {
+    async start(initialQuery: string, depth?: number) {
         try {
             logger.info('Starting Orchestrator...');
             this.stateManager.reset();
@@ -64,7 +75,7 @@ export class Orchestrator {
             }
 
             const topicStr = clarification.confirmedTopic || initialQuery;
-            const depth = clarification.suggestedDepth || 3;
+            const targetDepth = depth || clarification.suggestedDepth || 3;
 
             // NEW: Scaffold MkDocs project early
             await this.mkdocs.scaffoldProject(topicStr, this.outputDir);
@@ -73,7 +84,7 @@ export class Orchestrator {
                 topic: {
                     originalQuery: initialQuery,
                     confirmedTopic: topicStr,
-                    depthLevel: depth,
+                    depthLevel: targetDepth as any,
                     isClear: true
                 }
             });
@@ -82,7 +93,7 @@ export class Orchestrator {
             this.updatePhase('scout');
             const scoutReport = await this.explainer.execute({
                 concept: { name: topicStr },
-                depthLevel: depth,
+                depthLevel: targetDepth,
                 previousConcepts: []
             });
             this.stateManager.updateState({ scoutReport });
@@ -91,11 +102,8 @@ export class Orchestrator {
             await this.mkdocs.writeIndexPage(scoutReport, topicStr, this.outputDir);
 
 
-            // 3. Decomposition Logic
-            const conceptTree = await this.runDecompositionLoop(topicStr, depth, scoutReport);
-
-            // 4. Explanation Loop
-            await this.runExplanationLoop(conceptTree, depth);
+            // 3 & 4. Unified Decomposition & Explanation Loop
+            const conceptTree = await this.runUnifiedLoop(topicStr, targetDepth, scoutReport);
 
             // 5. Build
             this.updatePhase('build');
@@ -104,10 +112,12 @@ export class Orchestrator {
             const explanations = Object.values(state.explanations);
 
             if (explanations.length === 0) {
-                throw new Error('No explanations generated, cannot build.');
+                // If it's a very simple topic with no subconcepts, we might not have extra explanations,
+                // but usually there should be at least some.
+                logger.warn('No sub-concept explanations generated.');
             }
 
-            const builderOutput = await this.builder.execute({ explanations, depthLevel: depth });
+            const builderOutput = await this.builder.execute({ explanations, depthLevel: targetDepth });
             this.stateManager.updateState({ builderOutput });
 
             // 6. Synthesize
@@ -116,7 +126,7 @@ export class Orchestrator {
                 scoutReport,
                 decomposition: {
                     concepts: conceptTree as any, // Recursive tree passed here
-                    depthLevel: depth,
+                    depthLevel: targetDepth as any,
                     totalConcepts: conceptTree.length, // Rough count
                     learningSequence: [],
                     inScope: [],
@@ -128,7 +138,7 @@ export class Orchestrator {
 
             this.updatePhase('complete');
 
-            // 7. Generate MkDocs Site
+            // 7. Generate MkDocs Site (Final update)
             await this.mkdocs.generate(
                 topicStr,
                 finalResult,
@@ -150,145 +160,200 @@ export class Orchestrator {
         logger.info(`Phase: ${phase}`);
     }
 
-    private async runDecompositionLoop(topic: string, depth: number, scoutReport: any): Promise<ConceptNode[]> {
-        this.updatePhase('decompose');
-        return this.decomposeRecursively(topic, depth, scoutReport, 0, [], "");
-    }
+    private isSimilar(name: string): boolean {
+        const normalized = name.toLowerCase().trim();
+        // Exact match
+        if (this.exploredConcepts.has(normalized)) return true;
 
-    private async decomposeRecursively(topic: string, depth: number, scoutReport: any, currentDepth: number, parentConcepts: string[], currentPath: string, sectionPrefix: string = ""): Promise<ConceptNode[]> {
-        logger.info(`[Decomposition Loop] Topic: "${topic}" | Depth: ${currentDepth}/${depth}`);
+        // Basic plural/singular match
+        const singular = normalized.endsWith('s') ? normalized.slice(0, -1) : normalized;
+        if (this.exploredConcepts.has(singular)) return true;
 
-        // 1. Decompose
-        const decomposition = await this.decomposer.execute({
-            topic,
-            depthLevel: depth,
-            scoutReport,
-            parentConcepts
-        });
-
-        const nodes: ConceptNode[] = [];
-        const currentLevelConcepts = decomposition.concepts.map(c => c.name);
-        logger.info(`[Decomposition Loop] Decomposer returned ${decomposition.concepts.length} concepts for "${topic}"`);
-        logger.info(`[Decomposition Loop] Concepts: ${currentLevelConcepts.join(', ')}`);
-
-        // Pre-filter concepts to avoid repeating ancestors and ensure sequential numbering
-        const filteredConcepts = decomposition.concepts.filter(concept => {
-            const isRepetitive = concept.name.toLowerCase() === topic.toLowerCase() ||
-                parentConcepts.some(p => p.toLowerCase() === concept.name.toLowerCase());
-            if (isRepetitive) {
-                logger.debug(`[Decomposition Loop] Filtering out repetitive concept: ${concept.name}`);
-            }
-            return !isRepetitive;
-        });
-
-        for (let i = 0; i < filteredConcepts.length; i++) {
-            const concept = filteredConcepts[i];
-            const index = i + 1;
-            const currentSection = sectionPrefix ? `${sectionPrefix}_${index}` : `${index}`;
-            logger.info(`[Decomposition Loop] [${currentSection}] Processing: "${concept.name}"`);
-
-            const node: ConceptNode = { ...concept };
-            const slugBase = this.mkdocs.slugify(concept.name);
-            const slug = `${currentSection}_${slugBase}`;
-
-            // At currentDepth === 0 (top-level), ALWAYS create folder structure for every concept
-            const isTopLevel = currentDepth === 0;
-            const isWithinDepth = currentDepth < Math.max(1, Math.min(depth - 1, 3));
-            const shouldCreateFolder = isTopLevel || isWithinDepth;
-
-            if (shouldCreateFolder) {
-                const subDirPath = path.join(currentPath, slug);
-                logger.debug(`[Decomposition Loop] [${currentSection}] Creating folder structure. subDirPath: ${subDirPath}`);
-                await this.mkdocs.ensureDirectory(subDirPath, this.outputDir);
-                node.relativeFilePath = path.join(subDirPath, 'index.md');
-
-                // Only recurse if not atomic and within depth limit
-                if (!concept.isAtomic && isWithinDepth) {
-                    logger.info(`[Decomposition Loop] [${currentSection}] Recursing into "${concept.name}"...`);
-                    // ONLY pass ancestors to parentConcepts to avoid over-aggressive filtering of siblings
-                    const nextParentConcepts = [...parentConcepts, topic];
-                    node.children = await this.decomposeRecursively(concept.name, depth, scoutReport, currentDepth + 1, nextParentConcepts, subDirPath, currentSection);
-
-                    if (!node.children || node.children.length === 0) {
-                        // No children returned, but keep folder structure - just make it a leaf with index.md
-                        node.isAtomic = true;
-                        delete node.children;
-                        logger.info(`[Decomposition Loop] [${currentSection}] Sub-decomposition returned no children. Keeping folder with index.md at: ${node.relativeFilePath}`);
-                    }
-                } else {
-                    // Top-level atomic node: folder with index.md but no recursion
-                    node.isAtomic = true;
-                    logger.info(`[Decomposition Loop] [${currentSection}] Top-level node with folder structure. Path: ${node.relativeFilePath}`);
+        // Check against all existing but fuzzy (very light)
+        for (const existing of this.exploredConcepts) {
+            // If one contains the other and they are long enough
+            if (normalized.length > 5 && existing.length > 5) {
+                if (normalized.includes(existing) || existing.includes(normalized)) {
+                    return true;
                 }
-            } else {
-                // Deep-level atomic node: just a .md file
-                node.isAtomic = true;
-                node.relativeFilePath = path.join(currentPath, `${slug}.md`);
-                logger.info(`[Decomposition Loop] [${currentSection}] ATOMIC node. Path: ${node.relativeFilePath}`);
             }
-
-            nodes.push(node);
         }
 
-        return nodes;
+        return false;
     }
 
-    private async runExplanationLoop(conceptTree: ConceptNode[], depth: number) {
-        this.updatePhase('explain');
-        await this.traverseAndExplain(conceptTree, depth);
-        const flatExplanations = this.collectExplanations(conceptTree);
-        const explanationMap = flatExplanations.reduce((acc, exp) => ({ ...acc, [exp.conceptName]: exp }), {});
-        this.stateManager.updateState({ explanations: explanationMap });
-        return conceptTree;
+    private addToExplored(name: string) {
+        this.exploredConcepts.add(name.toLowerCase().trim());
     }
 
-    private async traverseAndExplain(nodes: ConceptNode[], depth: number) {
-        for (const node of nodes) {
-            // Explain EVERY node
-            logger.info(`[Explanation] Starting: ${node.name}`);
-            this.events.emit('step_progress', { message: `Explaining: ${node.name}` });
+    private async runUnifiedLoop(rootTopic: string, totalDepth: number, scoutReport: any): Promise<ConceptNode[]> {
+        this.updatePhase('generate');
+        this.exploredConcepts.clear();
+        this.addToExplored(rootTopic);
 
-            let explanation = await this.explainer.execute({ concept: node, depthLevel: depth, previousConcepts: [] });
+        const rootNodes: ConceptNode[] = [];
+        const queue: DecomposeTask[] = [{
+            topic: rootTopic,
+            currentDepth: 0,
+            parentConcepts: [],
+            currentPath: "",
+            sectionPrefix: "",
+            targetNodes: rootNodes,
+            rootTopic: rootTopic
+        }];
+
+        // The root concept itself is already explained in scoutReport and written to index.md
+        // So we start by decomposing the root topic to find the first level of concepts.
+        const rootTask = queue.shift()!;
+        await this.decomposeToQueue(rootTask, totalDepth, scoutReport, queue);
+
+        // Now process the queue: Explain then Decompose (if needed)
+        while (queue.length > 0) {
+            const task = queue.shift()!;
+            const { topic, currentDepth, parentConcepts, currentPath, sectionPrefix, targetNodes } = task;
+
+            logger.info(`[Unified Loop] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`);
+            this.events.emit('step_progress', { message: `Explaining: ${topic}` });
+
+            // 1. Create directory
+            const slugBase = this.mkdocs.slugify(topic);
+            const slug = `${sectionPrefix}_${slugBase}`;
+            const subDirPath = path.join(currentPath, slug);
+            await this.mkdocs.ensureDirectory(subDirPath, this.outputDir);
+
+            // 2. Explain
+            const node: ConceptNode = {
+                id: slug, // Use slug as ID for simplicity
+                name: topic,
+                oneLiner: "", // Will be filled by explainer or kept empty
+                isAtomic: true,
+                dependsOn: [],
+                relativeFilePath: path.join(subDirPath, 'index.md')
+            };
+
+            let explanation = await this.explainer.execute({
+                concept: node,
+                depthLevel: totalDepth,
+                previousConcepts: parentConcepts
+            });
 
             // Critic Loop
             let passed = false;
             let iterations = 0;
             while (!passed && iterations < 2) {
-                const critique = await this.critic.execute({ explanation, conceptName: node.name, depthLevel: depth });
+                const critique = await this.critic.execute({ explanation, conceptName: topic, depthLevel: totalDepth });
                 if (critique.verdict === 'PASS') {
                     passed = true;
                 } else {
-                    logger.info(`[Explanation] Critic requested revision for: ${node.name} (Iteration ${iterations + 1})`);
+                    logger.info(`[Unified Loop] Critic requested revision for: ${topic} (Iteration ${iterations + 1})`);
                     const iterationResult = await this.iterator.execute({ explanation, critique, iteration: iterations + 1 });
                     explanation = iterationResult.revisedExplanation;
                     iterations++;
                 }
             }
             node.explanation = explanation;
-            logger.info(`[Explanation] Completed: ${node.name}`);
 
-            // NEW: Update state incrementally
+            // 3. Write index.md immediately
+            await this.writeIncrementalPage(explanation, node.relativeFilePath);
+
+            // 4. Update State
             const currentState = this.stateManager.getState();
             this.stateManager.updateState({
                 explanations: {
                     ...currentState.explanations,
-                    [node.name]: explanation
+                    [topic]: explanation
                 },
-                explainedConcepts: [...currentState.explainedConcepts, node.name]
+                explainedConcepts: [...currentState.explainedConcepts, topic]
             });
 
-            // NEW: Write incremental markdown file using hierarchical path
-            await this.writeIncrementalPage(explanation, node.relativeFilePath);
+            targetNodes.push(node);
 
-            // Recurse for children
-            if (node.children && node.children.length > 0) {
-                await this.traverseAndExplain(node.children, depth);
+            // 5. Decompose (if depth allows)
+            if (currentDepth < totalDepth) {
+                node.children = [];
+                await this.decomposeToQueue({
+                    ...task,
+                    topic: topic,
+                    currentDepth: currentDepth,
+                    currentPath: subDirPath,
+                    sectionPrefix: sectionPrefix,
+                    targetNodes: node.children,
+                }, totalDepth, scoutReport, queue);
+
+                if (node.children.length > 0) {
+                    node.isAtomic = false;
+                }
             }
+        }
+
+        return rootNodes;
+    }
+
+    private async decomposeToQueue(task: DecomposeTask, totalDepth: number, scoutReport: any, queue: DecomposeTask[]) {
+        const { topic, currentDepth, parentConcepts, currentPath, sectionPrefix, rootTopic } = task;
+
+        const decomposition = await this.decomposer.execute({
+            topic,
+            depthLevel: totalDepth,
+            scoutReport,
+            parentConcepts,
+            rootTopic,
+            alreadyExplored: Array.from(this.exploredConcepts)
+        });
+
+        const filteredConcepts = decomposition.concepts.filter(concept => {
+            const isRepetitive = concept.name.toLowerCase() === topic.toLowerCase() ||
+                parentConcepts.some((p: string) => p.toLowerCase() === concept.name.toLowerCase());
+
+            if (isRepetitive) return false;
+            if (this.isSimilar(concept.name)) return false;
+            return true;
+        });
+
+        // NEW: Sort by learningSequence if available
+        if (decomposition.learningSequence && decomposition.learningSequence.length > 0) {
+            const seq = decomposition.learningSequence;
+            filteredConcepts.sort((a, b) => {
+                const idxA = seq.indexOf(a.id);
+                const idxB = seq.indexOf(b.id);
+                return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+            });
+        }
+
+        for (let i = 0; i < filteredConcepts.length; i++) {
+            const concept = filteredConcepts[i];
+            this.addToExplored(concept.name);
+
+            const index = i + 1;
+            const currentSection = sectionPrefix ? `${sectionPrefix}_${index}` : `${index}`;
+
+            queue.push({
+                topic: concept.name,
+                currentDepth: currentDepth + 1,
+                parentConcepts: [...parentConcepts, topic],
+                currentPath: currentPath,
+                sectionPrefix: currentSection,
+                targetNodes: task.targetNodes, // Crucial: push siblings into the same array
+                rootTopic
+            });
         }
     }
 
     private async writeIncrementalPage(explanation: Explanation, relativePath?: string) {
         const fileName = relativePath || `${this.mkdocs.slugify(explanation.conceptName)}.md`;
+
+        // Format references
+        const refs: string[] = [];
+        if (explanation.references) {
+            const r = explanation.references;
+            if (r.official) refs.push(`- **Official**: [${r.official.name}](${r.official.url})`);
+            if (r.bestTutorial) refs.push(`- **Tutorial**: [${r.bestTutorial.name}](${r.bestTutorial.url})`);
+            if (r.quickReference) refs.push(`- **Quick Reference**: [${r.quickReference.name}](${r.quickReference.url})`);
+            if (r.deepDive) refs.push(`- **Deep Dive**: [${r.deepDive.name}](${r.deepDive.url})`);
+            if (r.others) {
+                r.others.forEach(other => refs.push(`- [${other.name}](${other.url})`));
+            }
+        }
 
         const content = `
 # ${explanation.conceptName}
@@ -300,14 +365,18 @@ ${explanation.simpleExplanation}
 
 ${explanation.analogy ? `## Analogy\n${explanation.analogy}\n` : ''}
 
-${explanation.diagram ? `## Diagram\n\`\`\`mermaid\n${explanation.diagram.mermaidCode}\n\`\`\`\n*${explanation.diagram.caption}*\n` : ''}
+${explanation.imaginationScenario ? `## Imagination Scenario\n${explanation.imaginationScenario}\n` : ''}
+
+${explanation.diagram ? `## Diagram\n\`\`\`mermaid\n${explanation.diagram.mermaidCode}\n\`\`\`\n${explanation.diagram.caption ? `*${explanation.diagram.caption}*\n` : ''}` : ''}
 
 ${explanation.whyExists ? `## Why it Exists\n**Before:** ${explanation.whyExists.before}\n**The Pain:** ${explanation.whyExists.pain}\n**After:** ${explanation.whyExists.after}\n` : ''}
 
 ${explanation.codeExample ? `## Code Example (${explanation.codeExample.language})\n\`\`\`${explanation.codeExample.language}\n${explanation.codeExample.code}\n\`\`\`\n**What happens:** ${explanation.codeExample.whatHappens}\n` : ''}
 
+${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
+
 ## Check Your Understanding
-${(explanation.checkUnderstanding || []).map(q => `- ${q}`).join('\n')}
+${(explanation.checkUnderstanding || []).filter(q => !!q).map(q => `- ${q}`).join('\n')}
         `.trim();
 
         await this.mkdocs.writePage(fileName, content, this.outputDir);
@@ -323,3 +392,4 @@ ${(explanation.checkUnderstanding || []).map(q => `- ${q}`).join('\n')}
         return explanations;
     }
 }
+

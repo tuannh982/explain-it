@@ -12,7 +12,7 @@ async function main() {
     const orchestrator = new Orchestrator(outputDir);
 
     try {
-        const result = await orchestrator.start("Rete algorithm");
+        const result = await orchestrator.start("Rete algorithm", 2);
         console.log("Orchestrator completed successfully.");
         console.log("Result summary (Index):", result.indexContent.substring(0, 200) + "...");
         console.log("Pages generated:", result.pages.length);

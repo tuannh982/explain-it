@@ -25,9 +25,16 @@ export class ResponseParser {
      */
     parseJSON<T>(content: string): T {
         try {
-            // Extract JSON if model included text wrap
-            const jsonMatch = content.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-            const cleanJson = jsonMatch ? jsonMatch[0] : content;
+            // Try to find a JSON object or array balance-aware (simplified)
+            // First, try to find content between ```json blocks
+            const codeBlockMatch = content.match(/```json\s+([\s\S]*?)\s+```/);
+            if (codeBlockMatch) {
+                return JSON.parse(codeBlockMatch[1]) as T;
+            }
+
+            // Fallback: extract the first { } or [ ] block
+            const jsonMatch = content.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+            const cleanJson = jsonMatch ? jsonMatch[0].trim() : content.trim();
 
             // Remove control characters that can break JSON parsing
             const sanitized = cleanJson.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, '');

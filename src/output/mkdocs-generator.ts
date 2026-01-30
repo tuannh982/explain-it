@@ -61,6 +61,20 @@ export class MkDocsGenerator {
 
   async writeIndexPage(explanation: any, topic: string, outputDir: string): Promise<void> {
     const docsDir = path.join(outputDir, 'docs');
+
+    // Format references
+    const refs: string[] = [];
+    if (explanation.references) {
+      const r = explanation.references;
+      if (r.official) refs.push(`- **Official**: [${r.official.name}](${r.official.url})`);
+      if (r.bestTutorial) refs.push(`- **Tutorial**: [${r.bestTutorial.name}](${r.bestTutorial.url})`);
+      if (r.quickReference) refs.push(`- **Quick Reference**: [${r.quickReference.name}](${r.quickReference.url})`);
+      if (r.deepDive) refs.push(`- **Deep Dive**: [${r.deepDive.name}](${r.deepDive.url})`);
+      if (r.others) {
+        r.others.forEach((other: any) => refs.push(`- [${other.name}](${other.url})`));
+      }
+    }
+
     const content = `
 # ${topic}
 
@@ -74,6 +88,8 @@ ${explanation.analogy ? `## Analogy\n${explanation.analogy}\n` : ''}
 ${explanation.diagram ? `## Diagram\n\`\`\`mermaid\n${explanation.diagram.mermaidCode}\n\`\`\`\n*${explanation.diagram.caption}*\n` : ''}
 
 ${explanation.whyExists ? `## Why it Exists\n**Before:** ${explanation.whyExists.before}\n**The Pain:** ${explanation.whyExists.pain}\n**After:** ${explanation.whyExists.after}\n` : ''}
+
+${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
 
 **Note: Full detailed documentation is being generated...**
     `.trim();
