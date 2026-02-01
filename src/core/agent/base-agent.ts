@@ -52,24 +52,13 @@ export abstract class BaseAgent {
     }
 
     /**
-     * Convenience method that renders a template, calls the LLM with retry,
-     * and parses the JSON response.
-     * This maintains backward compatibility with existing agent implementations.
+     * Executes an LLM call with a conversation and parses the response.
      */
-    protected async executeLLMWithTemplate<T>(
-        templateName: string,
-        context: Record<string, any>,
+    protected async executeConversation<T>(
+        conversation: Message[],
+        templateName: string = 'unknown',
         options?: { maxTokens?: number; useSearch?: boolean }
     ): Promise<T> {
-        logger.debug(`[${this.constructor.name}] executing prompt: ${templateName}`);
-
-        // Render template to conversation
-        const conversation = await this.templateRenderer.render(templateName, context);
-
-        logger.debug(`[${this.constructor.name}] System Prompt: ${conversation[0]?.content}`);
-        logger.debug(`[${this.constructor.name}] User Prompt: ${conversation[1]?.content}`);
-
-        // Execute with retry
         return this.retryHandler.executeWithRetry(
             async () => {
                 const response = await this.executeLLM(conversation, options);
@@ -78,6 +67,33 @@ export abstract class BaseAgent {
             {},
             { agentName: this.constructor.name, templateName }
         );
+    }
+
+    /**
+     * Convenience method that renders a template, calls the LLM with retry,
+     * and parses the JSON response.
+     */
+    protected async executeLLMWithTemplate<T>(
+        templateName: string,
+        context: Record<string, any>,
+        options?: { maxTokens?: number; useSearch?: boolean }
+    ): Promise<T> {
+        logger.debug(`[${this.constructor.name}] executing prompt: ${templateName}`);
+
+        // 1. Render template parts
+        const { system, user } = await this.templateRenderer.renderParts(templateName, context);
+
+        // 2. Construct base conversation
+        const conversation: Message[] = [
+            { role: 'system', content: system },
+            { role: 'user', content: user }
+        ];
+
+        logger.debug(`[${this.constructor.name}] System Prompt: ${conversation[0]?.content}`);
+        logger.debug(`[${this.constructor.name}] User Prompt: ${conversation[1]?.content}`);
+
+        // 3. Execute with retry
+        return this.executeConversation<T>(conversation, templateName, options);
     }
 
     abstract execute(input: any): Promise<any>;

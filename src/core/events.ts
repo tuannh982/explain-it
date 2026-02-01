@@ -7,13 +7,16 @@ export type EventType =
     | 'error'
     | 'warning'
     | 'node_discovered'
-    | 'node_status_update';
+    | 'node_status_update'
+    | 'request_input';
 
 export interface EventPayload {
     timestamp: number;
     phase?: string;
     message?: string;
     data?: any;
+    question?: string;
+    options?: string[];
 }
 
 export class EventSystem extends EventEmitter {

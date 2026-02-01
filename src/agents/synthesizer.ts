@@ -1,7 +1,16 @@
 import { BaseAgent } from '../core/agent/base-agent.js';
 import { ScoutReport, Decomposition, Explanation, BuilderOutput, SynthesizerResult, ConceptNode } from '../core/types.js';
+import { TemplateManager } from '../generator/template-manager.js';
+import { config } from '../config/config.js';
 
 export class SynthesizerAgent extends BaseAgent {
+    private templateManager: TemplateManager;
+
+    constructor() {
+        super();
+        this.templateManager = new TemplateManager(config.paths.root);
+    }
+
     async execute(input: {
         scoutReport: ScoutReport,
         decomposition: Decomposition,
@@ -26,7 +35,7 @@ export class SynthesizerAgent extends BaseAgent {
         const rootNodes = input.decomposition.concepts as unknown as ConceptNode[];
         const pages: { id: string, title: string, fileName: string, content: string }[] = [];
 
-        const processNode = (node: ConceptNode) => {
+        const processNode = async (node: ConceptNode) => {
             // Respect the path calculated during decomposition
             const fileName = node.relativeFilePath || `${this.slugify(node.name)}.md`;
 
@@ -34,41 +43,23 @@ export class SynthesizerAgent extends BaseAgent {
             if (node.explanation) {
                 const exp = node.explanation;
 
-                // Collect references
-                const refs: string[] = [];
-                if (exp.references) {
-                    if (exp.references.official) refs.push(`- **Official**: [${exp.references.official.name}](${exp.references.official.url}) (Score: ${exp.references.official.qualityScore})`);
-                    if (exp.references.bestTutorial) refs.push(`- **Tutorial**: [${exp.references.bestTutorial.name}](${exp.references.bestTutorial.url})`);
-                    if (exp.references.quickReference) refs.push(`- **Quick Reference**: [${exp.references.quickReference.name}](${exp.references.quickReference.url})`);
-                    if (exp.references.others) {
-                        exp.references.others.forEach(r => refs.push(`- [${r.name}](${r.url})`));
-                    }
-                }
+                // Prepare references for template
+                const hasReferences = exp.references && (
+                    exp.references.official ||
+                    exp.references.bestTutorial ||
+                    exp.references.quickReference ||
+                    exp.references.deepDive ||
+                    (exp.references.others && exp.references.others.length > 0)
+                );
 
-                const content = `# ${exp.conceptName}
+                const context = {
+                    ...exp,
+                    hasReferences,
+                    // Ensure complexity is formatted if needed, though template handles replace
+                    complexity: exp.complexity ? exp.complexity.replace('_', ' ') : undefined
+                };
 
-${exp.elevatorPitch ? `> ${exp.elevatorPitch}\n` : ''}
-
-## Simple Explanation
-${exp.simpleExplanation}
-
-${exp.analogy ? `## Analogy\n${exp.analogy}\n` : ''}
-${exp.imaginationScenario ? `## Imagination Scenario\n${exp.imaginationScenario}\n` : ''}
-
-${exp.whyExists ? `## Why It Exists\n**Before**: ${exp.whyExists.before}\n\n**Pain**: ${exp.whyExists.pain}\n\n**After**: ${exp.whyExists.after}\n` : ''}
-
-${exp.diagram ? `## Diagram\n\`\`\`mermaid\n${exp.diagram.mermaidCode}\n\`\`\`\n\n${exp.diagram.caption}\n---\n` : ''}
-
-${exp.complexity ? `**Complexity**: ${exp.complexity.replace('_', ' ')}\n` : ''}
-${exp.prerequisites && exp.prerequisites.length > 0 ? `**Prerequisites**: ${exp.prerequisites.join(', ')}\n` : ''}
-
-${exp.codeExample ? `## Code Example\n\`\`\`${exp.codeExample.language}\n${exp.codeExample.code}\n\`\`\`\n\n${exp.codeExample.whatHappens}\n` : ''}
-
-${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
-
-## Check Your Understanding
-${(exp.checkUnderstanding || []).map((q, i) => `${i + 1}. ${q}`).join('\n')}
-`;
+                const content = await this.templateManager.render('concept-page.md', context);
 
                 pages.push({
                     id: node.id,
@@ -80,11 +71,15 @@ ${(exp.checkUnderstanding || []).map((q, i) => `${i + 1}. ${q}`).join('\n')}
 
             // Recurse
             if (node.children) {
-                node.children.forEach(child => processNode(child));
+                for (const child of node.children) {
+                    await processNode(child);
+                }
             }
         };
 
-        rootNodes.forEach(node => processNode(node));
+        for (const node of rootNodes) {
+            await processNode(node);
+        }
 
         // Calculate stats
         const totalWordCount = indexContent.split(/\s+/).length + pages.reduce((acc, p) => acc + p.content.split(/\s+/).length, 0);

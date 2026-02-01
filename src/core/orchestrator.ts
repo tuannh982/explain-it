@@ -16,6 +16,7 @@ import { IteratorAgent } from '../agents/iterator.js';
 import { ReDecomposerAgent } from '../agents/redecomposer.js';
 import { BuilderAgent } from '../agents/builder.js';
 import { SynthesizerAgent } from '../agents/synthesizer.js';
+import { SimilarityAgent } from '../agents/similarity.js';
 
 import { MkDocsGenerator } from '../generator/mkdocs-generator.js';
 import { TemplateManager } from '../generator/template-manager.js';
@@ -47,6 +48,7 @@ export class Orchestrator {
     private redecomposer = new ReDecomposerAgent();
     private builder = new BuilderAgent();
     private synthesizer = new SynthesizerAgent();
+    private similarity = new SimilarityAgent();
 
     private mkdocs = new MkDocsGenerator();
     private templateManager: TemplateManager;
@@ -87,17 +89,16 @@ export class Orchestrator {
         }
     }
 
+    private inputResolver: ((answer: string) => void) | null = null;
+
     async start(initialQuery: string) {
         try {
             logger.info('Starting Orchestrator...');
             this.stateManager.reset();
 
             this.updatePhase('clarify');
-            const clarification = await this.clarifier.execute({ userQuery: initialQuery });
 
-            if (!clarification.isClear) {
-                logger.warn('Query ambiguous, proceeding with best effort.');
-            }
+            const clarification = await this.resolveAmbiguity(initialQuery);
 
             this.stateManager.updateState({
                 topic: {
@@ -117,13 +118,27 @@ export class Orchestrator {
         }
     }
 
+    private async askUser(question: string, options?: string[]): Promise<string> {
+        return new Promise((resolve) => {
+            this.inputResolver = resolve;
+            this.events.emit('request_input', { question, options });
+        });
+    }
+
+    public resolveInput(answer: string) {
+        if (this.inputResolver) {
+            this.inputResolver(answer);
+            this.inputResolver = null;
+        }
+    }
+
     private updatePhase(phase: string) {
         this.stateManager.updateState({ currentPhase: phase as any });
         this.events.emit('phase_start', { phase });
         logger.info(`Phase: ${phase}`);
     }
 
-    private isSimilar(name: string): boolean {
+    private async isSimilar(name: string): Promise<boolean> {
         const normalized = name.toLowerCase().trim();
         // Exact match
         if (this.exploredConcepts.has(normalized)) return true;
@@ -132,13 +147,22 @@ export class Orchestrator {
         const singular = normalized.endsWith('s') ? normalized.slice(0, -1) : normalized;
         if (this.exploredConcepts.has(singular)) return true;
 
-        // Check against all existing but fuzzy (very light)
-        for (const existing of this.exploredConcepts) {
-            // If one contains the other and they are long enough
-            if (normalized.length > 5 && existing.length > 5) {
-                if (normalized.includes(existing) || existing.includes(normalized)) {
+        // Use SimilarityAgent for semantic check
+        // We only check if we have concepts to compare against
+        if (this.exploredConcepts.size > 0) {
+            try {
+                const result = await this.similarity.execute({
+                    candidate: name,
+                    existing: Array.from(this.exploredConcepts)
+                });
+
+                if (result.isSimilar) {
+                    logger.info(`[Similarity] "${name}" effectively duplicate of "${result.similarTo}". Reason: ${result.reasoning}`);
                     return true;
                 }
+            } catch (error) {
+                logger.error('[Similarity] Agent failed, falling back to false', error);
+                return false;
             }
         }
 
@@ -270,14 +294,18 @@ export class Orchestrator {
                 }
             }
 
-            const filteredConcepts = decomposition.concepts.filter(concept => {
+            const filteredConcepts = [];
+            for (const concept of decomposition.concepts) {
                 const isRepetitive = concept.name.toLowerCase() === topic.toLowerCase() ||
                     parentConcepts.some((p: string) => p.toLowerCase() === concept.name.toLowerCase());
 
-                if (isRepetitive) return false;
-                if (this.isSimilar(concept.name)) return false;
-                return true;
-            });
+                if (isRepetitive) continue;
+
+                const similar = await this.isSimilar(concept.name);
+                if (similar) continue;
+
+                filteredConcepts.push(concept);
+            }
 
             if (decomposition.learningSequence && decomposition.learningSequence.length > 0) {
                 const seq = decomposition.learningSequence;
@@ -401,5 +429,56 @@ export class Orchestrator {
         const content = await this.templateManager.render('concept-page.md', context);
         await this.mkdocs.writePage(fileName, content, this.outputDir);
         logger.info(`[Incremental Doc] Written: ${fileName}`);
+    }
+
+
+    private async resolveAmbiguity(initialQuery: string) {
+        let currentQuery = initialQuery;
+        const history: { question: string; answer: string }[] = [];
+
+        let clarification = await this.clarifier.execute({
+            userQuery: initialQuery,
+            history: history
+        });
+
+        while (!clarification.isClear) {
+            logger.warn('Query ambiguous, starting clarification loop.');
+
+            if (clarification.clarifications && clarification.clarifications.length > 0) {
+                const questionObj = clarification.clarifications[0];
+                const question = questionObj.question;
+                const options = questionObj.options;
+
+                // Emit event to request input from user (TUI)
+                const answer = await this.askUser(question, options);
+
+                // Add to history
+                history.push({ question, answer });
+
+                // We keep the query constant now, as the context is passed via history
+                // But we can still append to query if we want to be safe, though history is better.
+                // For now, let's rely on the history field we added to the agent.
+            } else {
+                logger.warn('Query ambiguous but no clarification questions generated. Proceeding with best effort.');
+                break;
+            }
+
+            // Retry with updated history
+            clarification = await this.clarifier.execute({
+                userQuery: initialQuery,
+                history: this.compactHistory(history)
+            });
+        }
+
+        return clarification;
+    }
+
+    private compactHistory(history: { question: string; answer: string }[]): { question: string; answer: string }[] {
+        const MAX_TURNS = 10; // Keep last 10 turns
+        if (history.length > MAX_TURNS) {
+            logger.info(`History trimmed from ${history.length} to ${MAX_TURNS} turns.`);
+            return history.slice(-MAX_TURNS);
+        }
+        return history;
     }
 }

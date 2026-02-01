@@ -1,67 +1,67 @@
-# {{conceptName}}
+# {{{conceptName}}}
 
 {{#if elevatorPitch}}
-> {{elevatorPitch}}
+> {{{elevatorPitch}}}
 
 {{/if}}
 ## Overview
-{{simpleExplanation}}
+{{{simpleExplanation}}}
 
 {{#if analogy}}
 ## Analogy
-{{analogy}}
+{{{analogy}}}
 
 {{/if}}
 {{#if imaginationScenario}}
 ## Imagination Scenario
-{{imaginationScenario}}
+{{{imaginationScenario}}}
 
 {{/if}}
 {{#if diagram}}
 ## Diagram
 \`\`\`mermaid
-{{diagram.mermaidCode}}
+{{{diagram.mermaidCode}}}
 \`\`\`
 {{#if diagram.caption}}
-*{{diagram.caption}}*
+*{{{diagram.caption}}}*
 {{/if}}
 
 {{/if}}
 {{#if whyExists}}
 ## Why it Exists
-**Before:** {{whyExists.before}}
-**The Pain:** {{whyExists.pain}}
-**After:** {{whyExists.after}}
+**Before:** {{{whyExists.before}}}
+**The Pain:** {{{whyExists.pain}}}
+**After:** {{{whyExists.after}}}
 
 {{/if}}
 {{#if codeExample}}
-## Code Example ({{codeExample.language}})
-\`\`\`{{codeExample.language}}
-{{codeExample.code}}
+## Code Example ({{{codeExample.language}}})
+\`\`\`{{{codeExample.language}}}
+{{{codeExample.code}}}
 \`\`\`
-**What happens:** {{codeExample.whatHappens}}
+**What happens:** {{{codeExample.whatHappens}}}
 
 {{/if}}
 {{#if hasReferences}}
 ## References
 {{#if references.official}}
-- **Official**: [{{references.official.name}}]({{references.official.url}})
+- **Official**: [{{{references.official.name}}}]({{{references.official.url}}})
 {{/if}}
 {{#if references.bestTutorial}}
-- **Tutorial**: [{{references.bestTutorial.name}}]({{references.bestTutorial.url}})
+- **Tutorial**: [{{{references.bestTutorial.name}}}]({{{references.bestTutorial.url}}})
 {{/if}}
 {{#if references.quickReference}}
-- **Quick Reference**: [{{references.quickReference.name}}]({{references.quickReference.url}})
+- **Quick Reference**: [{{{references.quickReference.name}}}]({{{references.quickReference.url}}})
 {{/if}}
 {{#if references.deepDive}}
-- **Deep Dive**: [{{references.deepDive.name}}]({{references.deepDive.url}})
+- **Deep Dive**: [{{{references.deepDive.name}}}]({{{references.deepDive.url}}})
 {{/if}}
 {{#each references.others}}
-- [{{name}}]({{url}})
+- [{{{name}}}]({{{url}}})
 {{/each}}
 
 {{/if}}
 ## Check Your Understanding
 {{#each checkUnderstanding}}
-- {{this}}
+- {{{this}}}
 {{/each}}

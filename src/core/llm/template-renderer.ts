@@ -13,10 +13,17 @@ export class TemplateRenderer {
     }
 
     /**
+     * Renders a template with the given context and returns the raw parts.
+     */
+    async renderParts(templateName: string, context: Record<string, any>): Promise<{ system: string; user: string }> {
+        return this.prompts.loadTemplate(templateName, context);
+    }
+
+    /**
      * Renders a template with the given context and returns a conversation.
      */
     async render(templateName: string, context: Record<string, any>): Promise<Message[]> {
-        const { system, user } = await this.prompts.loadTemplate(templateName, context);
+        const { system, user } = await this.renderParts(templateName, context);
 
         return [
             { role: 'system', content: system },
