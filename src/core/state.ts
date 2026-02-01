@@ -17,7 +17,9 @@ export type WorkflowPhase =
 	| "build"
 	| "synthesize"
 	| "complete"
-	| "failed";
+	| "failed"
+	| "decompose_root"
+	| "decompose_child";
 
 export interface WorkflowState {
 	topic?: Topic;

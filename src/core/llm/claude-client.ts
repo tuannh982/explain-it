@@ -59,23 +59,32 @@ export class ClaudeClient implements LLMClient {
 		// Separate system messages
 		const systemMessage =
 			messages.find((m) => m.role === "system")?.content || options?.system;
-		const chatMessages = messages
+		const chatMessages: Anthropic.MessageParam[] = messages
 			.filter((m) => m.role !== "system")
-			.map((m) => ({
-				role: m.role,
-				content:
+			.map((m) => {
+				const content: Anthropic.MessageParam["content"] =
 					typeof m.content === "string"
 						? [{ type: "text", text: m.content }]
-						: m.content, // Assume compatible format if not string
-			}));
+						: (m.content as Anthropic.MessageParam["content"]); // Type assertion needed unless Message.content exactly matches SDK
+				return {
+					role: m.role as "user" | "assistant",
+					content,
+				};
+			});
 
 		// Prepare tools if requested
-		// biome-ignore lint/suspicious/noExplicitAny: dependent on SDK types
-		const tools: any[] = [];
+		const tools: Anthropic.Tool[] = [];
 		if (options?.useSearch) {
 			tools.push({
-				type: "web_search_20250305",
 				name: "web_search",
+				description: "Search the web for current information",
+				input_schema: {
+					type: "object",
+					properties: {
+						query: { type: "string" },
+					},
+					required: ["query"],
+				},
 			});
 		}
 
@@ -90,14 +99,14 @@ export class ClaudeClient implements LLMClient {
 					max_tokens: maxTokens,
 					temperature,
 					system: systemMessage,
-					messages: chatMessages as any,
+					messages: chatMessages,
 					tools: tools.length > 0 ? tools : undefined,
 				});
 
 				// Add Claude's message to context for next potential turn
 				chatMessages.push({
 					role: "assistant",
-					content: response.content as any,
+					content: response.content,
 				});
 
 				const toolUseBlocks = response.content.filter(
@@ -144,9 +153,9 @@ export class ClaudeClient implements LLMClient {
 				}
 
 				// Handle tool use
-				// biome-ignore lint/suspicious/noExplicitAny: dependent on SDK types
-				const toolResults: any[] = [];
+				const toolResults: Anthropic.ToolResultBlockParam[] = [];
 				for (const toolUse of toolUseBlocks) {
+					// refine type
 					if (toolUse.type !== "tool_use") continue;
 
 					if (toolUse.name === "web_search") {
@@ -166,7 +175,7 @@ export class ClaudeClient implements LLMClient {
 				if (toolResults.length > 0) {
 					chatMessages.push({
 						role: "user",
-						content: toolResults as any,
+						content: toolResults,
 					});
 					loopCount++;
 				} else {

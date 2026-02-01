@@ -14,10 +14,14 @@ import { config } from "../config/config.js";
 import { MkDocsGenerator } from "../generator/mkdocs-generator.js";
 import { TemplateManager } from "../generator/template-manager.js";
 import { logger } from "../utils/logger.js";
-import { CircuitBreaker } from "./circuit-breaker.js";
 import { EventSystem } from "./events.js";
-import { StateManager } from "./state.js";
-import type { ConceptNode, Explanation } from "./types.js";
+import { StateManager, type WorkflowPhase } from "./state.js";
+import type {
+	Concept,
+	ConceptNode,
+	Explanation,
+	SynthesizerResult,
+} from "./types.js";
 
 interface DecomposeTask {
 	topic: string;
@@ -32,7 +36,6 @@ interface DecomposeTask {
 export class Orchestrator {
 	private stateManager: StateManager;
 	private events: EventSystem;
-	private circuitBreaker: CircuitBreaker;
 	private exploredConcepts = new Set<string>();
 	private inputResolver: ((answer: string) => void) | null = null;
 
@@ -57,7 +60,6 @@ export class Orchestrator {
 		this.outputDir = outputDir;
 		this.stateManager = new StateManager(outputDir);
 		this.events = new EventSystem();
-		this.circuitBreaker = new CircuitBreaker(this.stateManager.getState());
 		this.templateManager = new TemplateManager(config.paths.root);
 	}
 
@@ -111,10 +113,11 @@ export class Orchestrator {
 			});
 
 			this.process(clarification.confirmedTopic, clarification.suggestedDepth);
-		} catch (error: any) {
-			logger.error("Orchestrator Fatal Error:", error);
-			this.events.emit("error", { message: error.message });
-			throw error;
+		} catch (error: unknown) {
+			const err = error instanceof Error ? error : new Error(String(error));
+			logger.error("Orchestrator Fatal Error:", err);
+			this.events.emit("error", { message: err.message });
+			throw err;
 		}
 	}
 
@@ -132,8 +135,8 @@ export class Orchestrator {
 		}
 	}
 
-	private updatePhase(phase: string) {
-		this.stateManager.updateState({ currentPhase: phase as any });
+	private updatePhase(phase: WorkflowPhase) {
+		this.stateManager.updateState({ currentPhase: phase });
 		this.events.emit("phase_start", { phase });
 		logger.info(`Phase: ${phase}`);
 	}
@@ -180,8 +183,10 @@ export class Orchestrator {
 	private async processSingleTask(
 		task: DecomposeTask,
 		totalDepth: number,
-		_unusedScoutReport: any,
-	): Promise<any> {
+		_unusedScoutReport: unknown,
+	): Promise<
+		SynthesizerResult & { node: ConceptNode; allExplanations: Explanation[] }
+	> {
 		const {
 			topic,
 			currentDepth,
@@ -214,6 +219,7 @@ export class Orchestrator {
 				status: "pending",
 				relativeFilePath: "index.md",
 			};
+			this.events.emit("node_discovered", { node });
 		} else {
 			const slugBase = this.mkdocs.slugify(topic);
 			const slug = `${sectionPrefix}_${slugBase}`;
@@ -229,11 +235,19 @@ export class Orchestrator {
 				relativeFilePath: path.join(subDirPath, "index.md"),
 				status: "pending",
 			};
+			this.events.emit("node_discovered", {
+				node,
+				parentId:
+					parentConcepts.length > 0
+						? parentConcepts[parentConcepts.length - 1]
+						: undefined,
+			});
 		}
 
 		// 2. Discovery / Explanation
 		this.events.emit("node_status_update", {
-			data: { nodeId: node.id, status: "in-progress" },
+			nodeId: node.id,
+			status: "in-progress",
 		});
 
 		const explanationInput = isRoot
@@ -288,7 +302,8 @@ export class Orchestrator {
 
 		this.stateManager.addExplanation(topic, explanation);
 		this.events.emit("node_status_update", {
-			data: { nodeId: node.id, status: "done" },
+			nodeId: node.id,
+			status: "done",
 		});
 
 		// 5. Decompose & Recurse
@@ -359,7 +374,7 @@ export class Orchestrator {
 				});
 			}
 
-			const processChild = async (concept: any, index: number) => {
+			const processChild = async (concept: Concept, index: number) => {
 				this.addToExplored(concept.name);
 				const currentSection = sectionPrefix
 					? `${sectionPrefix}_${index}`
@@ -408,8 +423,8 @@ export class Orchestrator {
 		// 7. Synthesize
 		this.updatePhase("synthesize");
 		const decompositionContext = {
-			concepts: childrenNodes as any,
-			depthLevel: totalDepth as any,
+			concepts: childrenNodes,
+			depthLevel: totalDepth,
 			totalConcepts: childrenNodes.length,
 			learningSequence: childrenNodes.map((c) => c.id),
 			inScope: [],

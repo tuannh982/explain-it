@@ -1,30 +1,62 @@
 import { EventEmitter } from "node:events";
+import type { ConceptNode } from "./types.js";
 
-export type EventType =
-	| "phase_start"
-	| "phase_complete"
-	| "step_progress"
-	| "error"
-	| "warning"
-	| "node_discovered"
-	| "node_status_update"
-	| "request_input";
+// 1. Define specific payloads
+export interface PhaseStartPayload {
+	phase: string;
+}
 
-export interface EventPayload {
-	timestamp: number;
-	phase?: string;
-	message?: string;
-	data?: unknown;
-	question?: string;
+export interface StepProgressPayload {
+	message: string;
+}
+
+export interface NodeDiscoveredPayload {
+	node: ConceptNode;
+	parentId?: string;
+}
+
+export interface NodeStatusUpdatePayload {
+	nodeId: string;
+	status: ConceptNode["status"];
+}
+
+export interface RequestInputPayload {
+	question: string;
 	options?: string[];
 }
 
+export interface ErrorPayload {
+	message: string;
+}
+
+// 2. Map event names to payloads
+export interface EventMap {
+	phase_start: PhaseStartPayload;
+	step_progress: StepProgressPayload;
+	node_discovered: NodeDiscoveredPayload;
+	node_status_update: NodeStatusUpdatePayload;
+	request_input: RequestInputPayload;
+	error: ErrorPayload;
+}
+
+export type EventType = keyof EventMap;
+
+// 3. Wrapper payload that includes timestamp (for internal use or generic listeners)
+export type EventPayload<T extends EventType> = EventMap[T] & {
+	timestamp: number;
+};
+
 export class EventSystem extends EventEmitter {
-	emit(event: EventType, payload: Omit<EventPayload, "timestamp">) {
+	// Overload for specific events
+	emit<T extends EventType>(event: T, payload: EventMap[T]): boolean {
 		return super.emit(event, { ...payload, timestamp: Date.now() });
 	}
 
-	on(event: EventType, listener: (payload: EventPayload) => void): this {
-		return super.on(event, listener);
+	on<T extends EventType>(
+		event: T,
+		listener: (payload: EventMap[T] & { timestamp: number }) => void,
+	): this {
+		// biome-ignore lint/suspicious/noExplicitAny: dependent on base EventEmitter
+		return super.on(event, listener as any);
 	}
 }

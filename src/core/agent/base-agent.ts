@@ -35,6 +35,8 @@ export abstract class BaseAgent {
 		);
 
 		// Get agent specific config if available
+		// Get agent specific config if available
+		// biome-ignore lint/suspicious/noExplicitAny: config structure is dynamic
 		const agentConfig = (config.llm.agents as any)[this.configKey] || {};
 
 		const response = await this.llm.advance(conversation, {
@@ -79,7 +81,7 @@ export abstract class BaseAgent {
 	 */
 	protected async executeLLMWithTemplate<T>(
 		templateName: string,
-		context: Record<string, any>,
+		context: Record<string, unknown>,
 		options?: { maxTokens?: number; useSearch?: boolean },
 	): Promise<T> {
 		logger.debug(

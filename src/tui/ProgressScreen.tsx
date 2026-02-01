@@ -44,20 +44,18 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 	}, [nodes, nodeTree]);
 
 	useEffect(() => {
-		events.on("phase_start", (p: any) => {
-			setPhase((p as { phase?: string }).phase?.toUpperCase() || "UNKNOWN");
-			addLog(`>>> Phase: ${(p as { phase?: string }).phase}`);
+		events.on("phase_start", (p) => {
+			setPhase(p.phase.toUpperCase());
+			addLog(`>>> Phase: ${p.phase}`);
 		});
 
-		events.on("step_progress", (p: any) => {
-			const msg = (p as { message?: string }).message;
-			setCurrentStep(msg || "");
-			if (msg) addLog(`  - ${msg}`);
+		events.on("step_progress", (p) => {
+			setCurrentStep(p.message);
+			if (p.message) addLog(`  - ${p.message}`);
 		});
 
-		events.on("node_discovered", (p: any) => {
-			// biome-ignore lint/suspicious/noExplicitAny: complex payload
-			const { node, parentId } = (p as any).data || {};
+		events.on("node_discovered", (p) => {
+			const { node, parentId } = p;
 			if (!node) return;
 			setNodes((prev) => {
 				const next = new Map(prev);
@@ -76,9 +74,8 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 			}
 		});
 
-		events.on("node_status_update", (p: any) => {
-			// biome-ignore lint/suspicious/noExplicitAny: complex payload
-			const { nodeId, status } = (p as any).data || {};
+		events.on("node_status_update", (p) => {
+			const { nodeId, status } = p;
 			if (!nodeId) return;
 			setNodes((prev) => {
 				const node = prev.get(nodeId);
@@ -89,8 +86,8 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 			});
 		});
 
-		events.on("error", (p: any) => {
-			addLog(`ERROR: ${(p as { message?: string }).message}`);
+		events.on("error", (p) => {
+			addLog(`ERROR: ${p.message}`);
 		});
 	}, [events, addLog]);
 

@@ -14,14 +14,16 @@ const envSchema = z.object({
 	LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
+// biome-ignore lint/suspicious/noExplicitAny: inferred from zod
 let parsedEnv: any;
 try {
 	parsedEnv = envSchema.parse(process.env);
-} catch (error: any) {
-	if (error.name === "ZodError") {
+} catch (error: unknown) {
+	if (error instanceof z.ZodError) {
 		console.error(
 			"Environment validation failed:",
-			JSON.stringify(error.errors, null, 2),
+			// biome-ignore lint/suspicious/noExplicitAny: zod error type issue
+			JSON.stringify((error as z.ZodError<any>).issues, null, 2),
 		);
 	} else {
 		console.error("Environment loading failed:", error);

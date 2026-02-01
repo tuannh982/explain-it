@@ -1,7 +1,10 @@
 import path from "node:path";
 import fs from "fs-extra";
-import type { SynthesizerResult } from "../core/types.js";
+import type { Explanation, SynthesizerResult } from "../core/types.js";
 import { logger } from "../utils/logger.js";
+
+// Helper type for Nav
+type NavItem = Record<string, string | NavItem[]>;
 
 export class MkDocsGenerator {
 	/**
@@ -79,7 +82,7 @@ export class MkDocsGenerator {
 	}
 
 	async writeIndexPage(
-		explanation: any,
+		explanation: Explanation,
 		topic: string,
 		outputDir: string,
 	): Promise<void> {
@@ -102,8 +105,8 @@ export class MkDocsGenerator {
 			if (r.deepDive)
 				refs.push(`- **Deep Dive**: [${r.deepDive.name}](${r.deepDive.url})`);
 			if (r.others) {
-				// biome-ignore lint/suspicious/noExplicitAny: complex type
-				r.others.forEach((other: any) => {
+				// biome-ignore lint/style/noNonNullAssertion: guaranteed by check
+				r.others!.forEach((other) => {
 					refs.push(`- [${other.name}](${other.url})`);
 				});
 			}
@@ -132,8 +135,11 @@ ${refs.length > 0 ? `## References\n${refs.join("\n")}\n` : ""}
 		logger.info(`[MkDocs] Written initial index.md for ${topic}`);
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: legacy structure
-	private buildNavFromPages(pages: any[]): any[] {
+	// Private helper to build nav structure
+
+	private buildNavFromPages(
+		pages: { fileName: string; title: string }[],
+	): NavItem[] {
 		// Map directory paths to their corresponding pages
 		// biome-ignore lint/suspicious/noExplicitAny: legacy structure
 		const nodes = new Map<string, { page: any; children: any[] }>();
@@ -187,7 +193,7 @@ ${refs.length > 0 ? `## References\n${refs.join("\n")}\n` : ""}
 	async writeConfig(
 		topic: string,
 		outputDir: string,
-		nav: any[],
+		nav: NavItem[],
 	): Promise<void> {
 		const mkdocsConfig = `
 site_name: "${topic} - Explained"
@@ -246,7 +252,7 @@ ${this.formatNav(nav, 2)}
 		await fs.writeFile(path.join(outputDir, "mkdocs.yml"), mkdocsConfig.trim());
 	}
 
-	private formatNav(nav: any[], indent: number): string {
+	private formatNav(nav: NavItem[], indent: number): string {
 		return nav
 			.map((item) => {
 				const key = Object.keys(item)[0];

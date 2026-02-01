@@ -11,7 +11,8 @@ export class ExplainerAgent extends BaseAgent {
 		const conceptName =
 			"name" in input.concept
 				? input.concept.name
-				: (input.concept as any).name;
+				: // biome-ignore lint/suspicious/noExplicitAny: dual input type support
+					(input.concept as any).name;
 		const conceptOneLiner =
 			"oneLiner" in input.concept ? input.concept.oneLiner : "";
 

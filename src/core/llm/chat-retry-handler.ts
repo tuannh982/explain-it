@@ -67,7 +67,9 @@ export class ChatRetryHandler {
 						attempt,
 						errorType: err.name || "Error",
 						errorMessage: err.message,
-						rawContentPreview: (err as any).rawContent?.substring(0, 500),
+						rawContentPreview: (
+							err as Error & { rawContent?: string }
+						).rawContent?.substring(0, 500),
 					},
 					opts.logFile,
 				);

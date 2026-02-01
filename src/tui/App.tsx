@@ -23,7 +23,7 @@ export const App = () => {
 
 	useEffect(() => {
 		const events = orchestrator.getEvents();
-		const handleRequestInput = (payload: EventPayload) => {
+		const handleRequestInput = (payload: EventPayload<"request_input">) => {
 			if (payload.question) {
 				setClarificationData({
 					question: payload.question,
