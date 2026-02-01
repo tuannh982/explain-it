@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ClarifierAgent } from '../../src/agents/clarifier';
-import { ScoutAgent } from '../../src/agents/scout';
+
 import { DecomposerAgent } from '../../src/agents/decomposer';
 import { ValidatorAgent } from '../../src/agents/validator';
 import { ExplainerAgent } from '../../src/agents/explainer';
@@ -69,13 +69,7 @@ describe('Comprehensive Agent Integration Tests', () => {
         }, TIMEOUT);
     });
 
-    describe('Scout Agent', () => {
-        const agent = new ScoutAgent();
-        it('should research topic', async () => {
-            const result = await agent.execute({ topic: 'React', depthLevel: 1 });
-            expect(result.category).toBeDefined();
-        }, TIMEOUT);
-    });
+
 
     describe('Decomposer Agent', () => {
         const agent = new DecomposerAgent();

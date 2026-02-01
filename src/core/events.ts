@@ -1,30 +1,30 @@
-import { EventEmitter } from 'events';
+import { EventEmitter } from "node:events";
 
 export type EventType =
-    | 'phase_start'
-    | 'phase_complete'
-    | 'step_progress'
-    | 'error'
-    | 'warning'
-    | 'node_discovered'
-    | 'node_status_update'
-    | 'request_input';
+	| "phase_start"
+	| "phase_complete"
+	| "step_progress"
+	| "error"
+	| "warning"
+	| "node_discovered"
+	| "node_status_update"
+	| "request_input";
 
 export interface EventPayload {
-    timestamp: number;
-    phase?: string;
-    message?: string;
-    data?: any;
-    question?: string;
-    options?: string[];
+	timestamp: number;
+	phase?: string;
+	message?: string;
+	data?: unknown;
+	question?: string;
+	options?: string[];
 }
 
 export class EventSystem extends EventEmitter {
-    emit(event: EventType, payload: Omit<EventPayload, 'timestamp'>) {
-        return super.emit(event, { ...payload, timestamp: Date.now() });
-    }
+	emit(event: EventType, payload: Omit<EventPayload, "timestamp">) {
+		return super.emit(event, { ...payload, timestamp: Date.now() });
+	}
 
-    on(event: EventType, listener: (payload: EventPayload) => void): this {
-        return super.on(event, listener);
-    }
+	on(event: EventType, listener: (payload: EventPayload) => void): this {
+		return super.on(event, listener);
+	}
 }

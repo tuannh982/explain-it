@@ -1,159 +1,195 @@
-import fs from 'fs-extra';
-import path from 'path';
-import { logger } from '../utils/logger.js';
-import { SynthesizerResult } from '../core/types.js';
+import path from "node:path";
+import fs from "fs-extra";
+import type { SynthesizerResult } from "../core/types.js";
+import { logger } from "../utils/logger.js";
 
 export class MkDocsGenerator {
-  /**
-   * Initializes the MkDocs project structure and basic config.
-   */
-  async scaffoldProject(topic: string, outputDir: string): Promise<void> {
-    const docsDir = path.join(outputDir, 'docs');
-    const assetsDir = path.join(docsDir, 'assets');
+	/**
+	 * Initializes the MkDocs project structure and basic config.
+	 */
+	async scaffoldProject(topic: string, outputDir: string): Promise<void> {
+		const docsDir = path.join(outputDir, "docs");
+		const assetsDir = path.join(docsDir, "assets");
 
-    await fs.ensureDir(docsDir);
-    await fs.ensureDir(assetsDir);
+		await fs.ensureDir(docsDir);
+		await fs.ensureDir(assetsDir);
 
-    // Initial mkdocs.yml without full nav (will be updated or finalized later)
-    await this.writeConfig(topic, outputDir, [{ Home: 'index.md' }]);
+		// Initial mkdocs.yml without full nav (will be updated or finalized later)
+		await this.writeConfig(topic, outputDir, [{ Home: "index.md" }]);
 
-    // Initial index.md placeholder
-    await fs.writeFile(path.join(docsDir, 'index.md'), `# ${topic}\n\nDocumentation being generated...`);
-  }
+		// Initial index.md placeholder
+		await fs.writeFile(
+			path.join(docsDir, "index.md"),
+			`# ${topic}\n\nDocumentation being generated...`,
+		);
+	}
 
-  async ensureDirectory(relativeSubPath: string, outputDir: string): Promise<string> {
-    const fullPath = path.join(outputDir, 'docs', relativeSubPath);
-    await fs.ensureDir(fullPath);
-    return fullPath;
-  }
+	async ensureDirectory(
+		relativeSubPath: string,
+		outputDir: string,
+	): Promise<string> {
+		const fullPath = path.join(outputDir, "docs", relativeSubPath);
+		await fs.ensureDir(fullPath);
+		return fullPath;
+	}
 
-  async writePage(relativeFilePath: string, content: string, outputDir: string): Promise<string> {
-    const fullPath = path.join(outputDir, 'docs', relativeFilePath);
-    await fs.ensureDir(path.dirname(fullPath));
-    await fs.writeFile(fullPath, content);
-    return fullPath;
-  }
+	async writePage(
+		relativeFilePath: string,
+		content: string,
+		outputDir: string,
+	): Promise<string> {
+		const fullPath = path.join(outputDir, "docs", relativeFilePath);
+		await fs.ensureDir(path.dirname(fullPath));
+		await fs.writeFile(fullPath, content);
+		return fullPath;
+	}
 
-  async generate(topic: string, result: SynthesizerResult, outputDir: string): Promise<string> {
-    logger.info(`Finalizing MkDocs site for: ${topic}`);
+	async generate(
+		topic: string,
+		result: SynthesizerResult,
+		outputDir: string,
+	): Promise<string> {
+		logger.info(`Finalizing MkDocs site for: ${topic}`);
 
-    const docsDir = path.join(outputDir, 'docs');
+		const docsDir = path.join(outputDir, "docs");
 
-    // 1. Write Index
-    await fs.writeFile(path.join(docsDir, 'index.md'), result.indexContent);
+		// 1. Write Index
+		await fs.writeFile(path.join(docsDir, "index.md"), result.indexContent);
 
-    // 2. Write/Overwrite Pages (Final versions)
-    for (const page of result.pages) {
-      await this.writePage(page.fileName, page.content, outputDir);
-    }
+		// 2. Write/Overwrite Pages (Final versions)
+		for (const page of result.pages) {
+			await this.writePage(page.fileName, page.content, outputDir);
+		}
 
-    // 3. Generate final mkdocs.yml with full nav
-    // 3. Generate final mkdocs.yml with full nav
-    const nav = [
-      {
-        Home: [
-          { Overview: 'index.md' },
-          ...this.buildNavFromPages(result.pages)
-        ]
-      }
-    ];
+		// 3. Generate final mkdocs.yml with full nav
+		// 3. Generate final mkdocs.yml with full nav
+		const nav = [
+			{
+				Home: [
+					{ Overview: "index.md" },
+					...this.buildNavFromPages(result.pages),
+				],
+			},
+		];
 
-    await this.writeConfig(topic, outputDir, nav);
+		await this.writeConfig(topic, outputDir, nav);
 
-    logger.info(`MkDocs site finalized at: ${outputDir}`);
-    return outputDir;
-  }
+		logger.info(`MkDocs site finalized at: ${outputDir}`);
+		return outputDir;
+	}
 
-  async writeIndexPage(explanation: any, topic: string, outputDir: string): Promise<void> {
-    const docsDir = path.join(outputDir, 'docs');
+	async writeIndexPage(
+		explanation: any,
+		topic: string,
+		outputDir: string,
+	): Promise<void> {
+		const docsDir = path.join(outputDir, "docs");
 
-    // Format references
-    const refs: string[] = [];
-    if (explanation.references) {
-      const r = explanation.references;
-      if (r.official) refs.push(`- **Official**: [${r.official.name}](${r.official.url})`);
-      if (r.bestTutorial) refs.push(`- **Tutorial**: [${r.bestTutorial.name}](${r.bestTutorial.url})`);
-      if (r.quickReference) refs.push(`- **Quick Reference**: [${r.quickReference.name}](${r.quickReference.url})`);
-      if (r.deepDive) refs.push(`- **Deep Dive**: [${r.deepDive.name}](${r.deepDive.url})`);
-      if (r.others) {
-        r.others.forEach((other: any) => refs.push(`- [${other.name}](${other.url})`));
-      }
-    }
+		// Format references
+		const refs: string[] = [];
+		if (explanation.references) {
+			const r = explanation.references;
+			if (r.official)
+				refs.push(`- **Official**: [${r.official.name}](${r.official.url})`);
+			if (r.bestTutorial)
+				refs.push(
+					`- **Tutorial**: [${r.bestTutorial.name}](${r.bestTutorial.url})`,
+				);
+			if (r.quickReference)
+				refs.push(
+					`- **Quick Reference**: [${r.quickReference.name}](${r.quickReference.url})`,
+				);
+			if (r.deepDive)
+				refs.push(`- **Deep Dive**: [${r.deepDive.name}](${r.deepDive.url})`);
+			if (r.others) {
+				// biome-ignore lint/suspicious/noExplicitAny: complex type
+				r.others.forEach((other: any) => {
+					refs.push(`- [${other.name}](${other.url})`);
+				});
+			}
+		}
 
-    const content = `
+		const content = `
 # ${topic}
 
-${explanation.elevatorPitch ? `> ${explanation.elevatorPitch}\n` : ''}
+${explanation.elevatorPitch ? `> ${explanation.elevatorPitch}\n` : ""}
 
 ## Overview
 ${explanation.simpleExplanation}
 
-${explanation.analogy ? `## Analogy\n${explanation.analogy}\n` : ''}
+${explanation.analogy ? `## Analogy\n${explanation.analogy}\n` : ""}
 
-${explanation.diagram ? `## Diagram\n\`\`\`mermaid\n${explanation.diagram.mermaidCode}\n\`\`\`\n*${explanation.diagram.caption}*\n` : ''}
+${explanation.diagram ? `## Diagram\n\`\`\`mermaid\n${explanation.diagram.mermaidCode}\n\`\`\`\n*${explanation.diagram.caption}*\n` : ""}
 
-${explanation.whyExists ? `## Why it Exists\n**Before:** ${explanation.whyExists.before}\n**The Pain:** ${explanation.whyExists.pain}\n**After:** ${explanation.whyExists.after}\n` : ''}
+${explanation.whyExists ? `## Why it Exists\n**Before:** ${explanation.whyExists.before}\n**The Pain:** ${explanation.whyExists.pain}\n**After:** ${explanation.whyExists.after}\n` : ""}
 
-${refs.length > 0 ? `## References\n${refs.join('\n')}\n` : ''}
+${refs.length > 0 ? `## References\n${refs.join("\n")}\n` : ""}
 
 **Note: Full detailed documentation is being generated...**
     `.trim();
 
-    await fs.writeFile(path.join(docsDir, 'index.md'), content);
-    logger.info(`[MkDocs] Written initial index.md for ${topic}`);
-  }
+		await fs.writeFile(path.join(docsDir, "index.md"), content);
+		logger.info(`[MkDocs] Written initial index.md for ${topic}`);
+	}
 
-  private buildNavFromPages(pages: any[]): any[] {
-    // Map directory paths to their corresponding pages
-    const nodes = new Map<string, { page: any; children: any[] }>();
+	// biome-ignore lint/suspicious/noExplicitAny: legacy structure
+	private buildNavFromPages(pages: any[]): any[] {
+		// Map directory paths to their corresponding pages
+		// biome-ignore lint/suspicious/noExplicitAny: legacy structure
+		const nodes = new Map<string, { page: any; children: any[] }>();
 
-    // Initial pass: Create nodes for all pages
-    pages.forEach((page) => {
-      // Assuming fileName is like "folder/index.md", we use the folder as the key
-      const dir = path.dirname(page.fileName);
-      nodes.set(dir, { page, children: [] });
-    });
+		// Initial pass: Create nodes for all pages
+		pages.forEach((page) => {
+			// Assuming fileName is like "folder/index.md", we use the folder as the key
+			const dir = path.dirname(page.fileName);
+			nodes.set(dir, { page, children: [] });
+		});
 
-    const roots: any[] = [];
+		// biome-ignore lint/suspicious/noExplicitAny: legacy structure
+		const roots: any[] = [];
 
-    // Build the tree hierarchy
-    // Sort directories to ensure deterministic order (e.g. 1_, 1_1_, 2_)
-    const sortedDirs = Array.from(nodes.keys()).sort();
+		// Build the tree hierarchy
+		// Sort directories to ensure deterministic order (e.g. 1_, 1_1_, 2_)
+		const sortedDirs = Array.from(nodes.keys()).sort();
 
-    sortedDirs.forEach((dir) => {
-      const node = nodes.get(dir)!;
-      const parentDir = path.dirname(dir);
+		sortedDirs.forEach((dir) => {
+			// biome-ignore lint/style/noNonNullAssertion: guaranteed by keys()
+			const node = nodes.get(dir)!;
+			const parentDir = path.dirname(dir);
 
-      if (nodes.has(parentDir)) {
-        nodes.get(parentDir)!.children.push(node);
-      } else {
-        roots.push(node);
-      }
-    });
+			if (nodes.has(parentDir)) {
+				nodes.get(parentDir)?.children.push(node);
+			} else {
+				roots.push(node);
+			}
+		});
 
-    // Recursive function to format the nav structure
-    const buildTree = (node: any): any => {
-      // Leaf node: just the page
-      if (node.children.length === 0) {
-        return { [node.page.title]: node.page.fileName };
-      }
+		// Recursive function to format the nav structure
+		// biome-ignore lint/suspicious/noExplicitAny: recursive structure
+		const buildTree = (node: any): any => {
+			// Leaf node: just the page
+			if (node.children.length === 0) {
+				return { [node.page.title]: node.page.fileName };
+			}
 
-      // Branch node: Section with Overview + Children
-      const childrenNav = node.children.map((child: any) => buildTree(child));
+			// Branch node: Section with Overview + Children
+			// biome-ignore lint/suspicious/noExplicitAny: recursive structure
+			const childrenNav = node.children.map((child: any) => buildTree(child));
 
-      return {
-        [node.page.title]: [
-          { 'Overview': node.page.fileName },
-          ...childrenNav
-        ]
-      };
-    };
+			return {
+				[node.page.title]: [{ Overview: node.page.fileName }, ...childrenNav],
+			};
+		};
 
-    return roots.map((root) => buildTree(root));
-  }
+		return roots.map((root) => buildTree(root));
+	}
 
-  async writeConfig(topic: string, outputDir: string, nav: any[]): Promise<void> {
-    const mkdocsConfig = `
+	async writeConfig(
+		topic: string,
+		outputDir: string,
+		nav: any[],
+	): Promise<void> {
+		const mkdocsConfig = `
 site_name: "${topic} - Explained"
 theme:
   name: material
@@ -207,23 +243,28 @@ nav:
 ${this.formatNav(nav, 2)}
     `;
 
-    await fs.writeFile(path.join(outputDir, 'mkdocs.yml'), mkdocsConfig.trim());
-  }
+		await fs.writeFile(path.join(outputDir, "mkdocs.yml"), mkdocsConfig.trim());
+	}
 
-  private formatNav(nav: any[], indent: number): string {
-    return nav.map(item => {
-      const key = Object.keys(item)[0];
-      const value = item[key];
-      const spaces = ' '.repeat(indent);
-      if (typeof value === 'string') {
-        return `${spaces}- ${key}: ${value}`;
-      } else {
-        return `${spaces}- ${key}:\n${this.formatNav(value, indent + 2)}`;
-      }
-    }).join('\n');
-  }
+	private formatNav(nav: any[], indent: number): string {
+		return nav
+			.map((item) => {
+				const key = Object.keys(item)[0];
+				const value = item[key];
+				const spaces = " ".repeat(indent);
+				if (typeof value === "string") {
+					return `${spaces}- ${key}: ${value}`;
+				} else {
+					return `${spaces}- ${key}:\n${this.formatNav(value, indent + 2)}`;
+				}
+			})
+			.join("\n");
+	}
 
-  public slugify(text: string): string {
-    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  }
+	public slugify(text: string): string {
+		return text
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "");
+	}
 }

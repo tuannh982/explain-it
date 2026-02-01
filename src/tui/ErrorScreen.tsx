@@ -1,18 +1,25 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text } from "ink";
+import type React from "react";
 
 interface ErrorScreenProps {
-    error: Error;
+	error: Error;
 }
 
 export const ErrorScreen: React.FC<ErrorScreenProps> = ({ error }) => {
-    return (
-        <Box flexDirection="column" padding={1} borderStyle="round" borderColor="red">
-            <Text bold color="red">Fatal Error Occurred</Text>
-            <Box marginY={1}>
-                <Text>{error.message}</Text>
-            </Box>
-            <Text color="gray">{error.stack}</Text>
-        </Box>
-    );
+	return (
+		<Box
+			flexDirection="column"
+			padding={1}
+			borderStyle="round"
+			borderColor="red"
+		>
+			<Text bold color="red">
+				Fatal Error Occurred
+			</Text>
+			<Box marginY={1}>
+				<Text>{error.message}</Text>
+			</Box>
+			<Text color="gray">{error.stack}</Text>
+		</Box>
+	);
 };

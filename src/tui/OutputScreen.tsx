@@ -1,32 +1,39 @@
-import React from 'react';
-import { Box, Text } from 'ink';
-import Gradient from 'ink-gradient';
-import BigText from 'ink-big-text';
+import { Box, Text } from "ink";
+import BigText from "ink-big-text";
+import Gradient from "ink-gradient";
+import type React from "react";
 
 interface OutputScreenProps {
-    outputPath: string;
+	outputPath: string;
 }
 
 export const OutputScreen: React.FC<OutputScreenProps> = ({ outputPath }) => {
-    return (
-        <Box flexDirection="column" padding={1} borderStyle="round" borderColor="green">
-            <Gradient name="summer">
-                <BigText text="Success!" />
-            </Gradient>
+	return (
+		<Box
+			flexDirection="column"
+			padding={1}
+			borderStyle="round"
+			borderColor="green"
+		>
+			<Gradient name="summer">
+				<BigText text="Success!" />
+			</Gradient>
 
-            <Box marginY={1}>
-                <Text>Your learning guide has been generated successfully.</Text>
-            </Box>
+			<Box marginY={1}>
+				<Text>Your learning guide has been generated successfully.</Text>
+			</Box>
 
-            <Box flexDirection="column" padding={1} borderStyle="single">
-                <Text bold>Output Location:</Text>
-                <Text color="blue" underline>{outputPath}</Text>
-            </Box>
+			<Box flexDirection="column" padding={1} borderStyle="single">
+				<Text bold>Output Location:</Text>
+				<Text color="blue" underline>
+					{outputPath}
+				</Text>
+			</Box>
 
-            <Box marginTop={1}>
-                <Text>To view it, run: </Text>
-                <Text color="yellow">mkdocs serve</Text>
-            </Box>
-        </Box>
-    );
+			<Box marginTop={1}>
+				<Text>To view it, run: </Text>
+				<Text color="yellow">mkdocs serve</Text>
+			</Box>
+		</Box>
+	);
 };
