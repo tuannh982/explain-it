@@ -41,6 +41,11 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 	const [clarificationData, setClarificationData] = useState<{
 		question: string;
 		options?: string[];
+		context?: {
+			topic: string;
+			requirements: Record<string, string>;
+			suggestions: { approach: string; reason: string }[];
+		};
 	} | null>(null);
 
 	useEffect(() => {
@@ -50,6 +55,7 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 				setClarificationData({
 					question: payload.question,
 					options: payload.options,
+					context: payload.context,
 				});
 				setIsLoading(false); // Stop loading to show input
 			}
@@ -132,6 +138,7 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 			<ClarificationScreen
 				question={clarificationData.question}
 				options={clarificationData.options}
+				context={clarificationData.context}
 				onSubmit={handleClarificationSubmit}
 			/>
 		);

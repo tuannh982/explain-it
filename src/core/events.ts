@@ -23,6 +23,11 @@ export interface NodeStatusUpdatePayload {
 export interface RequestInputPayload {
 	question: string;
 	options?: string[];
+	context?: {
+		topic: string;
+		requirements: Record<string, string>;
+		suggestions: { approach: string; reason: string }[];
+	};
 }
 
 export interface ErrorPayload {

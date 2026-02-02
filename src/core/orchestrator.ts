@@ -1,7 +1,7 @@
 import path from "node:path";
 import { BuilderAgent } from "../agents/builder.js";
 // Agents
-import { ClarifierAgent } from "../agents/clarifier.js";
+import { ClarifierAgent, type ClarifierRequirements, type ClarifierResult } from "../agents/clarifier.js";
 import { CriticAgent } from "../agents/critic.js";
 import { DecomposerAgent } from "../agents/decomposer.js";
 import { ExplainerAgent } from "../agents/explainer.js";
@@ -128,10 +128,18 @@ export class Orchestrator {
 		}
 	}
 
-	private async askUser(question: string, options?: string[]): Promise<string> {
+	private async askUser(
+		question: string,
+		options?: string[],
+		context?: {
+			topic: string;
+			requirements: Record<string, string>;
+			suggestions: { approach: string; reason: string }[];
+		}
+	): Promise<string> {
 		return new Promise((resolve) => {
 			this.inputResolver = resolve;
-			this.events.emit("request_input", { question, options });
+			this.events.emit("request_input", { question, options, context });
 		});
 	}
 
@@ -506,62 +514,114 @@ export class Orchestrator {
 	}
 
 	public async clarify(initialQuery: string) {
-		const _currentQuery = initialQuery;
 		const history: { question: string; answer: string }[] = [];
+		let requirements: ClarifierRequirements = { constraints: {}, preferences: {} };
 
 		let clarification = await this.clarifier.execute({
 			userQuery: initialQuery,
-			history: history,
+			history: [],
+			requirements,
 		});
 
+		// Loop until confirmed (isClear = true)
 		while (!clarification.isClear) {
-			logger.warn("Query ambiguous, starting clarification loop.");
+			// Always accumulate requirements from each turn
+			if (clarification.requirements) {
+				requirements = {
+					...requirements,
+					...clarification.requirements,
+					constraints: { ...requirements.constraints, ...clarification.requirements.constraints },
+					preferences: { ...requirements.preferences, ...clarification.requirements.preferences },
+				};
+			}
 
-			if (
-				clarification.clarifications &&
-				clarification.clarifications.length > 0
-			) {
-				for (const questionObj of clarification.clarifications) {
-					const question = questionObj.question;
-					const options = questionObj.options;
+			if (clarification.needsConfirmation) {
+				// CONFIRM phase - show summary and get confirmation
+				const confirmQuestion = this.buildConfirmationQuestion(clarification);
+				const context = this.buildConfirmationContext(clarification);
+				const answer = await this.askUser(confirmQuestion.question, confirmQuestion.options, context);
 
-					// Emit event to request input from user (TUI)
-					const answer = await this.askUser(question, options);
+				history.push({ question: confirmQuestion.question, answer });
 
-					// Add to history
-					history.push({ question, answer });
+				if (answer === "Start over") {
+					// Reset everything
+					history.length = 0;
+					requirements = { constraints: {}, preferences: {} };
 				}
+				// "Yes, proceed" and "Let me adjust" both continue to next iteration
+				// The LLM will see the answer in history and respond accordingly
 
-				// We keep the query constant now, as the context is passed via history
-				// But we can still append to query if we want to be safe, though history is better.
-				// For now, let's rely on the history field we added to the agent.
+			} else if (clarification.clarifications && clarification.clarifications.length > 0) {
+				// REFINE phase - ask ONE question at a time (first one only)
+				const q = clarification.clarifications[0];
+				const answer = await this.askUser(q.question, q.options);
+				history.push({ question: q.question, answer });
+
 			} else {
-				logger.warn(
-					"Query ambiguous but no clarification questions generated. Proceeding with best effort.",
-				);
+				// No questions and not ready to confirm - break to avoid infinite loop
+				logger.warn("Clarifier returned no questions and not ready to confirm. Proceeding with best effort.");
 				break;
 			}
 
-			// Retry with updated history
+			// Re-run with accumulated context
 			clarification = await this.clarifier.execute({
 				userQuery: initialQuery,
-				history: this.compactHistory(history),
+				history,
+				requirements,
 			});
 		}
 
 		return clarification;
 	}
 
-	private compactHistory(
-		history: { question: string; answer: string }[],
-	): { question: string; answer: string }[] {
-		const MAX_TURNS = 10; // Keep last 10 turns
-		if (history.length > MAX_TURNS) {
-			logger.info(
-				`History trimmed from ${history.length} to ${MAX_TURNS} turns.`,
-			);
-			return history.slice(-MAX_TURNS);
+	private buildConfirmationQuestion(clarification: ClarifierResult): { question: string; options: string[] } {
+		const parts: string[] = [`Topic: "${clarification.confirmedTopic || clarification.originalQuery}"`];
+
+		// Add key requirements
+		if (clarification.requirements) {
+			const req = clarification.requirements;
+			if (req.domain) parts.push(`Domain: ${req.domain}`);
+			if (req.focus) parts.push(`Focus: ${req.focus}`);
+			if (req.audience) parts.push(`Audience: ${req.audience}`);
 		}
-		return history;
+
+		// Add suggestions
+		if (clarification.suggestions && clarification.suggestions.length > 0) {
+			const suggested = clarification.suggestions.map(s => s.approach).join(", ");
+			parts.push(`Suggested approach: ${suggested}`);
+		}
+
+		parts.push(`Depth: ${clarification.suggestedDepth}`);
+
+		const summary = parts.join("\n");
+		return {
+			question: `Ready to proceed?\n\n${summary}`,
+			options: ["Yes, proceed", "Let me adjust", "Start over"],
+		};
+	}
+
+	private buildConfirmationContext(clarification: ClarifierResult) {
+		const requirements: Record<string, string> = {};
+
+		if (clarification.requirements) {
+			const req = clarification.requirements;
+			if (req.domain) requirements.Domain = req.domain;
+			if (req.focus) requirements.Focus = req.focus;
+			if (req.audience) requirements.Audience = req.audience;
+			if (req.language) requirements.Language = req.language;
+
+			for (const [key, value] of Object.entries(req.constraints)) {
+				requirements[key] = value;
+			}
+			for (const [key, value] of Object.entries(req.preferences)) {
+				requirements[key] = value;
+			}
+		}
+
+		return {
+			topic: clarification.confirmedTopic || clarification.originalQuery,
+			requirements,
+			suggestions: clarification.suggestions || [],
+		};
 	}
 }

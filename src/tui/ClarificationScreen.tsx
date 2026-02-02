@@ -4,23 +4,30 @@ import TextInput from "ink-text-input";
 import type React from "react";
 import { useState } from "react";
 
+interface ClarificationContext {
+	topic: string;
+	requirements: Record<string, string>;
+	suggestions: { approach: string; reason: string }[];
+}
+
 interface ClarificationScreenProps {
 	question: string;
 	options?: string[];
 	onSubmit: (answer: string) => void;
+	context?: ClarificationContext;
 }
 
 export const ClarificationScreen: React.FC<ClarificationScreenProps> = ({
 	question,
 	options,
 	onSubmit,
+	context,
 }) => {
 	const [answer, setAnswer] = useState("");
 	const [isManualInput, setIsManualInput] = useState(false);
 
 	const handleSubmit = (value: string) => {
 		if (!value.trim()) return;
-		// Reset state just in case, though component likely unmounts
 		setIsManualInput(false);
 		onSubmit(value);
 	};
@@ -50,8 +57,27 @@ export const ClarificationScreen: React.FC<ClarificationScreenProps> = ({
 			borderColor="yellow"
 		>
 			<Text bold color="yellow">
-				Needs Clarification
+				{context ? "Confirmation" : "Needs Clarification"}
 			</Text>
+
+			{context && (
+				<Box flexDirection="column" marginY={1} paddingX={1}>
+					<Text color="cyan" bold>Summary</Text>
+					<Text>Topic: {context.topic}</Text>
+					{Object.entries(context.requirements).map(([key, value]) => (
+						<Text key={key} color="gray">  {key}: {value}</Text>
+					))}
+					{context.suggestions.length > 0 && (
+						<Box flexDirection="column" marginTop={1}>
+							<Text color="green" bold>Suggested Approach</Text>
+							{context.suggestions.map((s) => (
+								<Text key={s.approach} color="white">  {s.approach}: <Text color="gray">{s.reason}</Text></Text>
+							))}
+						</Box>
+					)}
+				</Box>
+			)}
+
 			<Box marginY={1}>
 				<Text>{question}</Text>
 			</Box>
