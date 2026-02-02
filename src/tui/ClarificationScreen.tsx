@@ -16,19 +16,31 @@ export const ClarificationScreen: React.FC<ClarificationScreenProps> = ({
 	onSubmit,
 }) => {
 	const [answer, setAnswer] = useState("");
+	const [isManualInput, setIsManualInput] = useState(false);
 
 	const handleSubmit = (value: string) => {
 		if (!value.trim()) return;
+		// Reset state just in case, though component likely unmounts
+		setIsManualInput(false);
 		onSubmit(value);
 	};
 
-	const handleSelect = (item: { label: string }) => {
-		onSubmit(item.label);
+	const handleSelect = (item: { label: string; value: string }) => {
+		if (item.value === "__manual__") {
+			setIsManualInput(true);
+		} else {
+			onSubmit(item.label);
+		}
 	};
 
 	const selectItems = options
-		? options.map((opt) => ({ label: opt, value: opt }))
+		? [
+				...options.map((opt) => ({ label: opt, value: opt })),
+				{ label: "Other (Manual Input)", value: "__manual__" },
+			]
 		: [];
+
+	const showTextInput = (options && options.length === 0) || isManualInput;
 
 	return (
 		<Box
@@ -44,19 +56,24 @@ export const ClarificationScreen: React.FC<ClarificationScreenProps> = ({
 				<Text>{question}</Text>
 			</Box>
 
-			{options && options.length > 0 ? (
+			{!showTextInput ? (
 				<Box flexDirection="column">
 					<Text color="gray">Select an option:</Text>
 					<SelectInput items={selectItems} onSelect={handleSelect} />
 				</Box>
 			) : (
-				<Box borderStyle="single" borderColor="blue" paddingX={1}>
-					<TextInput
-						value={answer}
-						onChange={setAnswer}
-						onSubmit={handleSubmit}
-						placeholder="Type your answer..."
-					/>
+				<Box flexDirection="column">
+					<Text color="gray">
+						{isManualInput ? "Enter your answer:" : "Type your answer:"}
+					</Text>
+					<Box borderStyle="single" borderColor="blue" paddingX={1}>
+						<TextInput
+							value={answer}
+							onChange={setAnswer}
+							onSubmit={handleSubmit}
+							placeholder="Type here..."
+						/>
+					</Box>
 				</Box>
 			)}
 		</Box>

@@ -1,9 +1,7 @@
 import { Box } from "ink";
 import { useEffect, useState } from "react";
 import { config } from "../config/config.js";
-import type { EventPayload } from "../core/events.js";
 import { Orchestrator } from "../core/orchestrator.js";
-import { ClarificationScreen } from "./ClarificationScreen.js";
 import { ErrorScreen } from "./ErrorScreen.js";
 import { InputScreen, type UserInput } from "./InputScreen.js";
 import { OutputScreen } from "./OutputScreen.js";
@@ -16,39 +14,21 @@ export const App = () => {
 	const [orchestrator] = useState(() => new Orchestrator(config.paths.output));
 	const [outputDir, setOutputDir] = useState("");
 	const [error, setError] = useState<Error | null>(null);
-	const [clarificationData, setClarificationData] = useState<{
-		question: string;
-		options?: string[];
-	} | null>(null);
-
 	useEffect(() => {
-		const events = orchestrator.getEvents();
-		const handleRequestInput = (payload: EventPayload<"request_input">) => {
-			if (payload.question) {
-				setClarificationData({
-					question: payload.question,
-					options: payload.options,
-				});
-				setScreen("clarification");
-			}
-		};
+		// Global event listeners can go here if needed
+		// For now, InputScreen handles input requests locally
+	}, []);
 
-		events.on("request_input", handleRequestInput);
+	// State to track the flow
+	const [currentTopic, _setCurrentTopic] = useState("");
+	// Suggested depth now handled inside InputScreen, but if we want to reset or something, we might keep it.
+	// For this refactor, InputScreen manages it locally after clarification.
+	const [inputStep, _setInputStep] = useState(0);
 
-		return () => {
-			// events.off('request_input', handleRequestInput);
-		};
-	}, [orchestrator]);
-
-	// The handleStart function is now redundant if orchestrator.start() is called automatically on mount.
-	// However, if the intention is to still allow user input to trigger a *new* start,
-	// this function would need to be re-evaluated.
-	// For now, assuming the automatic start replaces the initial user-triggered start.
-	// If the orchestrator needs to be restarted with user input, the logic would need adjustment.
 	const handleStart = async (input: UserInput) => {
 		setScreen("progress");
 		try {
-			await orchestrator.start(input.query);
+			await orchestrator.process(input.query, input.depth, input.persona);
 			setOutputDir(config.paths.output);
 			setScreen("output");
 		} catch (err: unknown) {
@@ -57,24 +37,18 @@ export const App = () => {
 		}
 	};
 
-	const handleClarificationSubmit = (answer: string) => {
-		setScreen("progress");
-		setClarificationData(null);
-		orchestrator.resolveInput(answer);
-	};
-
 	return (
 		<Box flexDirection="column">
-			{screen === "input" && <InputScreen onSubmit={handleStart} />}
+			{screen === "input" && (
+				<InputScreen
+					onSubmit={handleStart}
+					initialStep={inputStep}
+					initialQuery={currentTopic} // Still useful if we want to pre-fill from somewhere else
+					orchestrator={orchestrator}
+				/>
+			)}
 			{screen === "progress" && (
 				<ProgressScreen events={orchestrator.getEvents()} />
-			)}
-			{screen === "clarification" && clarificationData && (
-				<ClarificationScreen
-					question={clarificationData.question}
-					options={clarificationData.options}
-					onSubmit={handleClarificationSubmit}
-				/>
 			)}
 			{screen === "output" && <OutputScreen outputPath={outputDir} />}
 			{screen === "error" && error && <ErrorScreen error={error} />}

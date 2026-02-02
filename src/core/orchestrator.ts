@@ -31,6 +31,7 @@ interface DecomposeTask {
 	sectionPrefix: string;
 	targetNodes: ConceptNode[];
 	rootTopic: string;
+	persona: string;
 }
 
 export class Orchestrator {
@@ -67,7 +68,7 @@ export class Orchestrator {
 		return this.events;
 	}
 
-	async process(topic: string, depth: number) {
+	async process(topic: string, depth: number, persona: string) {
 		try {
 			await this.mkdocs.scaffoldProject(topic, this.outputDir);
 
@@ -80,6 +81,7 @@ export class Orchestrator {
 					sectionPrefix: "",
 					targetNodes: [],
 					rootTopic: topic,
+					persona: persona,
 				},
 				depth,
 				null,
@@ -94,25 +96,30 @@ export class Orchestrator {
 		}
 	}
 
-	async start(initialQuery: string) {
+	async start(initialQuery: string, depth?: number, persona?: string) {
 		try {
 			logger.info("Starting Orchestrator...");
 			this.stateManager.reset();
 
 			this.updatePhase("clarify");
 
-			const clarification = await this.resolveAmbiguity(initialQuery);
+			const clarification = await this.clarify(initialQuery);
 
 			this.stateManager.updateState({
 				topic: {
 					originalQuery: initialQuery,
 					confirmedTopic: clarification.confirmedTopic,
-					depthLevel: clarification.suggestedDepth,
+					depthLevel: depth ?? clarification.suggestedDepth,
 					isClear: true,
 				},
 			});
 
-			this.process(clarification.confirmedTopic, clarification.suggestedDepth);
+			// Default persona if started directly via start()
+			this.process(
+				clarification.confirmedTopic,
+				depth ?? clarification.suggestedDepth,
+				persona ?? "Professional",
+			);
 		} catch (error: unknown) {
 			const err = error instanceof Error ? error : new Error(String(error));
 			logger.error("Orchestrator Fatal Error:", err);
@@ -389,6 +396,7 @@ export class Orchestrator {
 						sectionPrefix: currentSection,
 						targetNodes: [],
 						rootTopic: rootTopic,
+						persona: task.persona,
 					},
 					totalDepth,
 					null,
@@ -497,7 +505,7 @@ export class Orchestrator {
 		logger.info(`[Incremental Doc] Written: ${fileName}`);
 	}
 
-	private async resolveAmbiguity(initialQuery: string) {
+	public async clarify(initialQuery: string) {
 		const _currentQuery = initialQuery;
 		const history: { question: string; answer: string }[] = [];
 
@@ -513,15 +521,16 @@ export class Orchestrator {
 				clarification.clarifications &&
 				clarification.clarifications.length > 0
 			) {
-				const questionObj = clarification.clarifications[0];
-				const question = questionObj.question;
-				const options = questionObj.options;
+				for (const questionObj of clarification.clarifications) {
+					const question = questionObj.question;
+					const options = questionObj.options;
 
-				// Emit event to request input from user (TUI)
-				const answer = await this.askUser(question, options);
+					// Emit event to request input from user (TUI)
+					const answer = await this.askUser(question, options);
 
-				// Add to history
-				history.push({ question, answer });
+					// Add to history
+					history.push({ question, answer });
+				}
 
 				// We keep the query constant now, as the context is passed via history
 				// But we can still append to query if we want to be safe, though history is better.

@@ -29,8 +29,8 @@ source .venv/bin/activate
 # Install mkdocs and theme if not present
 # We check for mkdocs-material specifically since the yml uses 'material' theme
 if ! command -v mkdocs &> /dev/null || ! pip show mkdocs-material &> /dev/null; then
-    echo "Installing requirements (mkdocs, mkdocs-material)..."
-    pip install mkdocs mkdocs-material
+    echo "Installing requirements from requirements.txt..."
+    pip install -r "$SCRIPT_DIR/requirements.txt"
 fi
 
 echo "Starting mkdocs server..."

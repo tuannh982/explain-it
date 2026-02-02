@@ -142,3 +142,9 @@ vite.config.ts.timestamp-*
 
 # output directory
 output
+
+# built executables
+bin/
+
+# esbuild bundle output
+bundle/
