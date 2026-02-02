@@ -1,7 +1,11 @@
 import path from "node:path";
 import { BuilderAgent } from "../agents/builder.js";
 // Agents
-import { ClarifierAgent, type ClarifierRequirements, type ClarifierResult } from "../agents/clarifier.js";
+import {
+	ClarifierAgent,
+	type ClarifierRequirements,
+	type ClarifierResult,
+} from "../agents/clarifier.js";
 import { CriticAgent } from "../agents/critic.js";
 import { DecomposerAgent } from "../agents/decomposer.js";
 import { ExplainerAgent } from "../agents/explainer.js";
@@ -135,7 +139,7 @@ export class Orchestrator {
 			topic: string;
 			requirements: Record<string, string>;
 			suggestions: { approach: string; reason: string }[];
-		}
+		},
 	): Promise<string> {
 		return new Promise((resolve) => {
 			this.inputResolver = resolve;
@@ -515,7 +519,10 @@ export class Orchestrator {
 
 	public async clarify(initialQuery: string) {
 		const history: { question: string; answer: string }[] = [];
-		let requirements: ClarifierRequirements = { constraints: {}, preferences: {} };
+		let requirements: ClarifierRequirements = {
+			constraints: {},
+			preferences: {},
+		};
 
 		let clarification = await this.clarifier.execute({
 			userQuery: initialQuery,
@@ -530,8 +537,14 @@ export class Orchestrator {
 				requirements = {
 					...requirements,
 					...clarification.requirements,
-					constraints: { ...requirements.constraints, ...clarification.requirements.constraints },
-					preferences: { ...requirements.preferences, ...clarification.requirements.preferences },
+					constraints: {
+						...requirements.constraints,
+						...clarification.requirements.constraints,
+					},
+					preferences: {
+						...requirements.preferences,
+						...clarification.requirements.preferences,
+					},
 				};
 			}
 
@@ -539,7 +552,11 @@ export class Orchestrator {
 				// CONFIRM phase - show summary and get confirmation
 				const confirmQuestion = this.buildConfirmationQuestion(clarification);
 				const context = this.buildConfirmationContext(clarification);
-				const answer = await this.askUser(confirmQuestion.question, confirmQuestion.options, context);
+				const answer = await this.askUser(
+					confirmQuestion.question,
+					confirmQuestion.options,
+					context,
+				);
 
 				history.push({ question: confirmQuestion.question, answer });
 
@@ -550,16 +567,19 @@ export class Orchestrator {
 				}
 				// "Yes, proceed" and "Let me adjust" both continue to next iteration
 				// The LLM will see the answer in history and respond accordingly
-
-			} else if (clarification.clarifications && clarification.clarifications.length > 0) {
+			} else if (
+				clarification.clarifications &&
+				clarification.clarifications.length > 0
+			) {
 				// REFINE phase - ask ONE question at a time (first one only)
 				const q = clarification.clarifications[0];
 				const answer = await this.askUser(q.question, q.options);
 				history.push({ question: q.question, answer });
-
 			} else {
 				// No questions and not ready to confirm - break to avoid infinite loop
-				logger.warn("Clarifier returned no questions and not ready to confirm. Proceeding with best effort.");
+				logger.warn(
+					"Clarifier returned no questions and not ready to confirm. Proceeding with best effort.",
+				);
 				break;
 			}
 
@@ -574,8 +594,13 @@ export class Orchestrator {
 		return clarification;
 	}
 
-	private buildConfirmationQuestion(clarification: ClarifierResult): { question: string; options: string[] } {
-		const parts: string[] = [`Topic: "${clarification.confirmedTopic || clarification.originalQuery}"`];
+	private buildConfirmationQuestion(clarification: ClarifierResult): {
+		question: string;
+		options: string[];
+	} {
+		const parts: string[] = [
+			`Topic: "${clarification.confirmedTopic || clarification.originalQuery}"`,
+		];
 
 		// Add key requirements
 		if (clarification.requirements) {
@@ -587,7 +612,9 @@ export class Orchestrator {
 
 		// Add suggestions
 		if (clarification.suggestions && clarification.suggestions.length > 0) {
-			const suggested = clarification.suggestions.map(s => s.approach).join(", ");
+			const suggested = clarification.suggestions
+				.map((s) => s.approach)
+				.join(", ");
 			parts.push(`Suggested approach: ${suggested}`);
 		}
 

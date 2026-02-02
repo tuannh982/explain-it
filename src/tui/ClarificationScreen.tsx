@@ -62,16 +62,26 @@ export const ClarificationScreen: React.FC<ClarificationScreenProps> = ({
 
 			{context && (
 				<Box flexDirection="column" marginY={1} paddingX={1}>
-					<Text color="cyan" bold>Summary</Text>
+					<Text color="cyan" bold>
+						Summary
+					</Text>
 					<Text>Topic: {context.topic}</Text>
 					{Object.entries(context.requirements).map(([key, value]) => (
-						<Text key={key} color="gray">  {key}: {value}</Text>
+						<Text key={key} color="gray">
+							{" "}
+							{key}: {value}
+						</Text>
 					))}
 					{context.suggestions.length > 0 && (
 						<Box flexDirection="column" marginTop={1}>
-							<Text color="green" bold>Suggested Approach</Text>
+							<Text color="green" bold>
+								Suggested Approach
+							</Text>
 							{context.suggestions.map((s) => (
-								<Text key={s.approach} color="white">  {s.approach}: <Text color="gray">{s.reason}</Text></Text>
+								<Text key={s.approach} color="white">
+									{" "}
+									{s.approach}: <Text color="gray">{s.reason}</Text>
+								</Text>
 							))}
 						</Box>
 					)}
