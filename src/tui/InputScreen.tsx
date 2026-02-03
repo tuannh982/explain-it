@@ -151,7 +151,7 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 			</Gradient>
 
 			<Box marginY={1}>
-				<Text>Let me explain anything to you using the Feynman Method.</Text>
+				<Text>Let me explain anything to you.</Text>
 			</Box>
 
 			{step === 0 && (

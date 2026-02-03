@@ -219,7 +219,6 @@ export class Orchestrator {
 		logger.info(
 			`[Process Task] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`,
 		);
-		this.events.emit("step_progress", { message: `Processing: ${topic}` });
 
 		// 1. Setup Node/Directory
 		let node: ConceptNode;
@@ -263,10 +262,23 @@ export class Orchestrator {
 			});
 		}
 
+		this.events.emit("step_progress", {
+			nodeId: node.id,
+			step: "processing",
+			status: "started",
+			message: `Processing: ${topic}`,
+		});
+
 		// 2. Discovery / Explanation
 		this.events.emit("node_status_update", {
 			nodeId: node.id,
 			status: "in-progress",
+		});
+
+		this.events.emit("step_progress", {
+			nodeId: node.id,
+			step: "explaining",
+			status: "started",
 		});
 
 		const explanationInput = isRoot
@@ -311,6 +323,12 @@ export class Orchestrator {
 		}
 		node.explanation = explanation;
 
+		this.events.emit("step_progress", {
+			nodeId: node.id,
+			step: "explaining",
+			status: "completed",
+		});
+
 		// 4. Write Index Page
 		if (isRoot) {
 			this.stateManager.updateState({ scoutReport: explanation });
@@ -330,7 +348,13 @@ export class Orchestrator {
 		const allExplanations: Explanation[] = [explanation];
 
 		if (currentDepth < totalDepth) {
-			this.updatePhase(isRoot ? "decompose_root" : "decompose_child");
+			this.updatePhase("decompose");
+
+			this.events.emit("step_progress", {
+				nodeId: node.id,
+				step: "decomposing",
+				status: "started",
+			});
 
 			let decomposition = await this.decomposer.execute({
 				topic,
@@ -430,6 +454,12 @@ export class Orchestrator {
 
 			node.children = childrenNodes;
 			if (childrenNodes.length > 0) node.isAtomic = false;
+
+			this.events.emit("step_progress", {
+				nodeId: node.id,
+				step: "decomposing",
+				status: "completed",
+			});
 		}
 
 		// 6. Build

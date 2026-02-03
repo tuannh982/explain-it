@@ -4,6 +4,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EventSystem } from "../core/events.js";
 import type { ConceptNode } from "../core/types.js";
+import { logEvents } from "../utils/logger.js";
 
 interface ProgressScreenProps {
 	events: EventSystem;
@@ -14,52 +15,88 @@ interface FlattenedNode {
 	name: string;
 	status: ConceptNode["status"];
 	depth: number;
+	hasChildren: boolean;
+	currentStep?: string;
+	stepStatus?: string;
+	startTime?: number;
 }
 
 export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 	const [phase, setPhase] = useState("Initializing...");
 	const [logs, setLogs] = useState<string[]>([]);
-	const [currentStep, setCurrentStep] = useState("");
 	const [nodes, setNodes] = useState<Map<string, ConceptNode>>(new Map());
-	const [nodeTree, setNodeTree] = useState<Map<string, string[]>>(new Map()); // parentId -> childIds[]
+	const [nodeTree, setNodeTree] = useState<Map<string, string[]>>(new Map());
 	const [selectedIndex, setSelectedIndex] = useState(0);
+	const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
+	const [nodeSteps, setNodeSteps] = useState<Map<string, { step: string; status: string }>>(new Map());
+	const [nodeStartTimes, setNodeStartTimes] = useState<Map<string, number>>(new Map());
 
 	const addLog = useCallback((msg: string) => {
-		setLogs((prev) => [...prev.slice(-5), msg]); // Keep last 5 logs for tree space
+		setLogs((prev) => [...prev.slice(-4), msg]);
 	}, []);
 
-	const flattenedNodes = useMemo(() => {
+	// Build flattened visible nodes (respecting collapse state)
+	const visibleNodes = useMemo(() => {
 		const result: FlattenedNode[] = [];
-		const traverse = (id: string, depth: number) => {
+		const traverse = (id: string, depth: number, parentCollapsed: boolean) => {
+			if (parentCollapsed) return;
 			const node = nodes.get(id);
 			if (!node) return;
-			result.push({ id, name: node.name, status: node.status, depth });
+
 			const children = nodeTree.get(id) || [];
-			children.forEach((childId) => {
-				traverse(childId, depth + 1);
+			const hasChildren = children.length > 0;
+			const isCollapsed = collapsedNodes.has(id);
+			const stepInfo = nodeSteps.get(id);
+			const startTime = nodeStartTimes.get(id);
+
+			result.push({
+				id,
+				name: node.name,
+				status: node.status,
+				depth,
+				hasChildren,
+				currentStep: stepInfo?.step,
+				stepStatus: stepInfo?.status,
+				startTime,
 			});
+
+			for (const childId of children) {
+				traverse(childId, depth + 1, isCollapsed);
+			}
 		};
-		traverse("root", 0);
+		traverse("root", 0, false);
 		return result;
-	}, [nodes, nodeTree]);
+	}, [nodes, nodeTree, collapsedNodes, nodeSteps, nodeStartTimes]);
 
 	useEffect(() => {
-		events.on("phase_start", (p) => {
+		const handlePhaseStart = (p: { phase: string }) => {
 			setPhase(p.phase.toUpperCase());
 			addLog(`>>> Phase: ${p.phase}`);
-		});
+		};
 
-		events.on("step_progress", (p) => {
-			setCurrentStep(p.message);
-			if (p.message) addLog(`  - ${p.message}`);
-		});
+		const handleStepProgress = (p: { nodeId: string; step: string; status: string; message?: string }) => {
+			const { nodeId, step, status, message } = p;
+			if (nodeId) {
+				setNodeSteps((prev) => {
+					const next = new Map(prev);
+					next.set(nodeId, { step, status });
+					return next;
+				});
+			}
+			if (message) addLog(`  - ${message}`);
+		};
 
-		events.on("node_discovered", (p) => {
+		const handleNodeDiscovered = (p: { node: ConceptNode; parentId?: string }) => {
 			const { node, parentId } = p;
 			if (!node) return;
 			setNodes((prev) => {
 				const next = new Map(prev);
 				next.set(node.id, node);
+				return next;
+			});
+			setNodeStartTimes((prev) => {
+				const next = new Map(prev);
+				next.set(node.id, Date.now());
 				return next;
 			});
 			if (parentId) {
@@ -72,9 +109,9 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 					return next;
 				});
 			}
-		});
+		};
 
-		events.on("node_status_update", (p) => {
+		const handleNodeStatusUpdate = (p: { nodeId: string; status: ConceptNode["status"] }) => {
 			const { nodeId, status } = p;
 			if (!nodeId) return;
 			setNodes((prev) => {
@@ -84,26 +121,81 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 				next.set(nodeId, { ...node, status });
 				return next;
 			});
-		});
+		};
 
-		events.on("error", (p) => {
+		const handleError = (p: { message: string }) => {
 			addLog(`ERROR: ${p.message}`);
-		});
+		};
+
+		events.on("phase_start", handlePhaseStart);
+		events.on("step_progress", handleStepProgress);
+		events.on("node_discovered", handleNodeDiscovered);
+		events.on("node_status_update", handleNodeStatusUpdate);
+		events.on("error", handleError);
+
+		return () => {
+			events.off("phase_start", handlePhaseStart);
+			events.off("step_progress", handleStepProgress);
+			events.off("node_discovered", handleNodeDiscovered);
+			events.off("node_status_update", handleNodeStatusUpdate);
+			events.off("error", handleError);
+		};
 	}, [events, addLog]);
 
-	useInput((_input, key) => {
+	// Subscribe to logger events
+	useEffect(() => {
+		const handleLog = (entry: { level: string; formatted: string }) => {
+			addLog(entry.formatted);
+		};
+		logEvents.on("log", handleLog);
+		return () => {
+			logEvents.off("log", handleLog);
+		};
+	}, [addLog]);
+
+	useInput((input, key) => {
 		if (key.upArrow) {
 			setSelectedIndex((prev) => Math.max(0, prev - 1));
 		}
 		if (key.downArrow) {
-			setSelectedIndex((prev) => Math.min(flattenedNodes.length - 1, prev + 1));
+			setSelectedIndex((prev) => Math.min(visibleNodes.length - 1, prev + 1));
+		}
+		if (key.leftArrow) {
+			const node = visibleNodes[selectedIndex];
+			if (node?.hasChildren) {
+				setCollapsedNodes((prev) => new Set(prev).add(node.id));
+			}
+		}
+		if (key.rightArrow) {
+			const node = visibleNodes[selectedIndex];
+			if (node) {
+				setCollapsedNodes((prev) => {
+					const next = new Set(prev);
+					next.delete(node.id);
+					return next;
+				});
+			}
+		}
+		if (input === " " || key.return) {
+			const node = visibleNodes[selectedIndex];
+			if (node?.hasChildren) {
+				setCollapsedNodes((prev) => {
+					const next = new Set(prev);
+					if (next.has(node.id)) {
+						next.delete(node.id);
+					} else {
+						next.add(node.id);
+					}
+					return next;
+				});
+			}
 		}
 	});
 
 	const getStatusIcon = (status: ConceptNode["status"]) => {
 		switch (status) {
 			case "done":
-				return <Text color="green">✅</Text>;
+				return <Text color="green">✓</Text>;
 			case "in-progress":
 				return (
 					<Text color="yellow">
@@ -111,11 +203,38 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 					</Text>
 				);
 			case "failed":
-				return <Text color="red">❌</Text>;
+				return <Text color="red">✗</Text>;
 			default:
-				return <Text color="gray">⏳</Text>;
+				return <Text color="gray">○</Text>;
 		}
 	};
+
+	const getCollapseIcon = (node: FlattenedNode) => {
+		if (!node.hasChildren) return "•";
+		return collapsedNodes.has(node.id) ? "▶" : "▼";
+	};
+
+	const formatElapsed = (startTime?: number) => {
+		if (!startTime) return "";
+		const elapsed = Math.floor((Date.now() - startTime) / 1000);
+		return `(${elapsed}s)`;
+	};
+
+	const formatStepInfo = (node: FlattenedNode) => {
+		if (!node.currentStep) return "";
+		if (node.stepStatus === "completed") return "";
+		return `[${node.currentStep}...]`;
+	};
+
+	// Calculate visible window
+	const windowSize = 8;
+	const halfWindow = Math.floor(windowSize / 2);
+	let startIdx = Math.max(0, selectedIndex - halfWindow);
+	const endIdx = Math.min(visibleNodes.length, startIdx + windowSize);
+	if (endIdx - startIdx < windowSize) {
+		startIdx = Math.max(0, endIdx - windowSize);
+	}
+	const windowedNodes = visibleNodes.slice(startIdx, endIdx);
 
 	return (
 		<Box
@@ -135,7 +254,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 						{phase}
 					</Text>
 				</Box>
-				<Text color="gray">Use ↑↓ to browse</Text>
+				<Text color="gray">↑↓ navigate │ ←→/Enter toggle</Text>
 			</Box>
 
 			<Box
@@ -146,35 +265,36 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 				borderColor="blue"
 				paddingX={1}
 			>
-				{flattenedNodes.length === 0 ? (
+				{visibleNodes.length === 0 ? (
 					<Text color="gray">Discovering concepts...</Text>
 				) : (
-					flattenedNodes
-						.map((node, i) => (
+					windowedNodes.map((node, i) => {
+						const actualIndex = startIdx + i;
+						const isSelected = actualIndex === selectedIndex;
+						return (
 							<Box key={node.id}>
-								<Text color={i === selectedIndex ? "cyan" : "white"}>
-									{i === selectedIndex ? "> " : "  "}
+								<Text color={isSelected ? "cyan" : "white"}>
+									{isSelected ? "> " : "  "}
 									{"  ".repeat(node.depth)}
-									{getStatusIcon(node.status)} {node.name}
+									{getCollapseIcon(node)} {getStatusIcon(node.status)} {node.name}{" "}
+									<Text color="gray">
+										{formatStepInfo(node)} {formatElapsed(node.startTime)}
+									</Text>
 								</Text>
 							</Box>
-						))
-						.slice(Math.max(0, selectedIndex - 5), selectedIndex + 5)
+						);
+					})
 				)}
 			</Box>
-
-			{currentStep && (
-				<Box marginBottom={1}>
-					<Text color="blue">Activity: {currentStep}</Text>
-				</Box>
-			)}
 
 			<Box
 				flexDirection="column"
 				borderStyle="single"
 				borderColor="gray"
 				paddingX={1}
+				height={5}
 			>
+				<Text color="white" bold>Logs:</Text>
 				{logs.map((log, i) => (
 					// biome-ignore lint/suspicious/noArrayIndexKey: log tail order is stable
 					<Text key={i} color="gray" wrap="truncate-end">

@@ -7,7 +7,10 @@ export interface PhaseStartPayload {
 }
 
 export interface StepProgressPayload {
-	message: string;
+	nodeId: string;
+	step: string;
+	status: "started" | "in-progress" | "completed" | "failed";
+	message?: string;
 }
 
 export interface NodeDiscoveredPayload {

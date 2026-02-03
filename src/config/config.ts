@@ -16,7 +16,7 @@ export const config = {
 			provider: "claude",
 			model: "claude-haiku-4-5-20251001", // faster, efficient model as default
 			temperature: 0.7,
-			maxTokens: 4096,
+			maxTokens: 64000,
 		},
 		agents: {
 			clarifier: {
