@@ -6,14 +6,12 @@ export class CriticAgent extends BaseAgent {
 		explanation: Explanation;
 		conceptName: string;
 		depthLevel: number;
+		persona: string;
 	}): Promise<Critique> {
-		const persona =
-			input.depthLevel <= 2 ? "Curious 12-year old" : "Junior Developer";
-
 		return this.executeLLMWithTemplate<Critique>("critic", {
 			conceptName: input.conceptName,
 			explanationJson: JSON.stringify(input.explanation, null, 2),
-			persona: persona,
+			persona: input.persona,
 		});
 	}
 }

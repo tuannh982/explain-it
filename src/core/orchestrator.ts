@@ -100,38 +100,6 @@ export class Orchestrator {
 		}
 	}
 
-	async start(initialQuery: string, depth?: number, persona?: string) {
-		try {
-			logger.info("Starting Orchestrator...");
-			this.stateManager.reset();
-
-			this.updatePhase("clarify");
-
-			const clarification = await this.clarify(initialQuery);
-
-			this.stateManager.updateState({
-				topic: {
-					originalQuery: initialQuery,
-					confirmedTopic: clarification.confirmedTopic,
-					depthLevel: depth ?? clarification.suggestedDepth,
-					isClear: true,
-				},
-			});
-
-			// Default persona if started directly via start()
-			this.process(
-				clarification.confirmedTopic,
-				depth ?? clarification.suggestedDepth,
-				persona ?? "Professional",
-			);
-		} catch (error: unknown) {
-			const err = error instanceof Error ? error : new Error(String(error));
-			logger.error("Orchestrator Fatal Error:", err);
-			this.events.emit("error", { message: err.message });
-			throw err;
-		}
-	}
-
 	private async askUser(
 		question: string,
 		options?: string[],
@@ -283,15 +251,15 @@ export class Orchestrator {
 
 		const explanationInput = isRoot
 			? {
-					concept: { name: topic },
-					depthLevel: totalDepth,
-					previousConcepts: [],
-				}
+				concept: { name: topic },
+				depthLevel: totalDepth,
+				previousConcepts: [],
+			}
 			: {
-					concept: node,
-					depthLevel: totalDepth,
-					previousConcepts: parentConcepts,
-				};
+				concept: node,
+				depthLevel: totalDepth,
+				previousConcepts: parentConcepts,
+			};
 
 		let explanation = await this.explainer.execute(explanationInput);
 		node.explanation = explanation;
@@ -305,6 +273,7 @@ export class Orchestrator {
 				explanation,
 				conceptName: topic,
 				depthLevel: totalDepth,
+				persona: task.persona,
 			});
 			if (critique.verdict === "PASS") {
 				passed = true;
@@ -423,32 +392,50 @@ export class Orchestrator {
 					? `${sectionPrefix}_${index}`
 					: `${index}`;
 
-				return this.processSingleTask(
-					{
-						topic: concept.name,
-						currentDepth: currentDepth + 1,
-						parentConcepts: [...parentConcepts, topic],
-						currentPath: subDirPath,
-						sectionPrefix: currentSection,
-						targetNodes: [],
-						rootTopic: rootTopic,
-						persona: task.persona,
-					},
-					totalDepth,
-					null,
-				);
+				// Pre-compute the node ID so we can emit status on failure
+				const slugBase = this.mkdocs.slugify(concept.name);
+				const childNodeId = `${currentSection}_${slugBase}`;
+
+				try {
+					return await this.processSingleTask(
+						{
+							topic: concept.name,
+							currentDepth: currentDepth + 1,
+							parentConcepts: [...parentConcepts, topic],
+							currentPath: subDirPath,
+							sectionPrefix: currentSection,
+							targetNodes: [],
+							rootTopic: rootTopic,
+							persona: task.persona,
+						},
+						totalDepth,
+						null,
+					);
+				} catch (error) {
+					// Emit failed status so UI updates the node
+					this.events.emit("node_status_update", {
+						nodeId: childNodeId,
+						status: "failed",
+					});
+					throw error; // Re-throw so Promise.allSettled captures it
+				}
 			};
 
-			const childResults = await Promise.all(
+			const childSettled = await Promise.allSettled(
 				filteredConcepts.map((c, i) => processChild(c, i + 1)),
 			);
 
-			for (const res of childResults) {
-				if (res?.node) {
-					childrenNodes.push(res.node);
-					if (res.allExplanations) {
-						allExplanations.push(...res.allExplanations);
+			for (const result of childSettled) {
+				if (result.status === "fulfilled" && result.value?.node) {
+					childrenNodes.push(result.value.node);
+					if (result.value.allExplanations) {
+						allExplanations.push(...result.value.allExplanations);
 					}
+				} else if (result.status === "rejected") {
+					// Log the failure but continue processing other nodes
+					const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+					logger.warn(`[Orchestrator] Child node failed: ${errorMsg}`);
+					this.events.emit("error", { message: `Node failed: ${errorMsg}` });
 				}
 			}
 
@@ -647,8 +634,6 @@ export class Orchestrator {
 				.join(", ");
 			parts.push(`Suggested approach: ${suggested}`);
 		}
-
-		parts.push(`Depth: ${clarification.suggestedDepth}`);
 
 		const summary = parts.join("\n");
 		return {

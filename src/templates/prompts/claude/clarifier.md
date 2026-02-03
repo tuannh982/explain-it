@@ -27,7 +27,11 @@ When you have enough context (typically 1-3 questions answered):
 ### Phase: COMPLETE
 When user selects "Yes, proceed":
 - Set `isClear: true` and `needsConfirmation: false`
-- Set `confirmedTopic` to the final refined topic with approach
+- Set `confirmedTopic` to a SHORT, CONCISE topic name:
+  - For algorithms: just the algorithm name (e.g., "Quick Sort", "Dijkstra's Algorithm", "Binary Search")
+  - For data structures: just the structure name (e.g., "Red-Black Tree", "Hash Map", "Trie")
+  - For concepts: one short sentence max (e.g., "React Server Components", "Event-Driven Architecture")
+  - NEVER include lengthy descriptions, explanations, or qualifiers in the topic
 
 ## WEB SEARCH GUIDANCE
 Use web_search tool when you detect:
@@ -37,12 +41,6 @@ Use web_search tool when you detect:
 - Unfamiliar technical concepts → search to provide accurate suggestions
 
 Example: User wants "high throughput CEP" → search "high throughput complex event processing algorithms" → suggest Rete network
-
-## DEPTH LEVEL GUIDELINES
-- Depth 2: Simple concepts, single-page explanations
-- Depth 3: Moderate complexity with 2-3 sub-concepts
-- Depth 4: Complex systems with multiple components
-- Depth 5: Expert-level topics requiring deep exploration
 
 ## OUTPUT FORMAT (JSON only)
 {
@@ -72,8 +70,7 @@ Example: User wants "high throughput CEP" → search "high throughput complex ev
       "alternatives": ["string", "..."]
     }
   ],
-  "suggestedDepth": number,
-  "confirmedTopic": "string | null"
+  "confirmedTopic": "string | null - SHORT name only (e.g., 'Quick Sort', 'Binary Search Tree', 'React Hooks')"
 }
 
 ## RULES
@@ -83,6 +80,7 @@ Example: User wants "high throughput CEP" → search "high throughput complex ev
 4. Include your suggestions in the options when relevant
 5. Always end with a confirmation phase before setting isClear=true
 6. Output valid JSON only - no markdown, no explanation outside JSON
+7. Keep confirmedTopic SHORT: algorithm/data structure names only, or one brief sentence for concepts
 
 ---
 

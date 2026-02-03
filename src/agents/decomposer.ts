@@ -1,5 +1,6 @@
 import { BaseAgent } from "../core/agent/base-agent.js";
 import type { Decomposition, ScoutReport } from "../core/types.js";
+import { logger } from "../utils/logger.js";
 
 export class DecomposerAgent extends BaseAgent {
 	async execute(input: {
@@ -26,7 +27,7 @@ export class DecomposerAgent extends BaseAgent {
 			{ useSearch: true },
 		);
 
-		console.log(
+		logger.info(
 			`[Decomposer] Decomposed "${input.topic}" into ${result.concepts.length} concepts: ${result.concepts.map((c) => c.name).join(", ")}`,
 		);
 

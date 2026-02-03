@@ -34,7 +34,6 @@ export interface ClarifierResult {
 	}[];
 	requirements: ClarifierRequirements;
 	suggestions: ClarifierSuggestion[];
-	suggestedDepth: 1 | 2 | 3 | 4 | 5;
 	confirmedTopic: string;
 }
 

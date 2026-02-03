@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import type { EventPayload } from "../core/events.js";
 import type { Orchestrator } from "../core/orchestrator.js";
 import { ClarificationScreen } from "./ClarificationScreen.js";
+import { PERSONA_DEFINITIONS } from "../config/personas.js";
 
 export type UserInput = {
 	query: string;
@@ -33,9 +34,6 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 	const [step, setStep] = useState(initialStep); // 0 = query, 1 = depth
 	const [isLoading, setIsLoading] = useState(false);
 	const [statusMessage, setStatusMessage] = useState("");
-	const [suggestedDepth, setSuggestedDepth] = useState<number | undefined>(
-		undefined,
-	);
 
 	// Clarification state
 	const [clarificationData, setClarificationData] = useState<{
@@ -77,7 +75,6 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 			const clarification = await orchestrator.clarify(value);
 			// Update with confirmed topic
 			setQuery(clarification.confirmedTopic);
-			setSuggestedDepth(clarification.suggestedDepth);
 
 			setIsLoading(false);
 			setStep(1); // Move to depth selection
@@ -108,30 +105,30 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 	const depthOptions = [
 		{
 			label: "1 - Overview (5-10 mins) [Layman]",
-			value: { depth: 1, persona: "Layman" },
+			value: { depth: 1, persona: PERSONA_DEFINITIONS.Layman },
+			key: "depth-1",
 		},
 		{
 			label: "2 - Basics (Get Started) [Novice]",
-			value: { depth: 2, persona: "Novice" },
+			value: { depth: 2, persona: PERSONA_DEFINITIONS.Novice },
+			key: "depth-2",
 		},
 		{
 			label: "3 - Moderate (Deep Dive) [Professional]",
-			value: { depth: 3, persona: "Professional" },
+			value: { depth: 3, persona: PERSONA_DEFINITIONS.Professional },
+			key: "depth-3",
 		},
 		{
 			label: "4 - Deep (Internals) [Expert]",
-			value: { depth: 4, persona: "Expert" },
+			value: { depth: 4, persona: PERSONA_DEFINITIONS.Expert },
+			key: "depth-4",
 		},
 		{
 			label: "5 - Expert (Mastery) [Researcher]",
-			value: { depth: 5, persona: "Researcher" },
+			value: { depth: 5, persona: PERSONA_DEFINITIONS.Researcher },
+			key: "depth-5",
 		},
 	];
-
-	const initialSelectionIndex =
-		suggestedDepth && suggestedDepth >= 1 && suggestedDepth <= 5
-			? suggestedDepth - 1
-			: 0;
 
 	if (clarificationData) {
 		return (
@@ -177,14 +174,10 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 
 			{step === 1 && (
 				<Box flexDirection="column">
-					<Text bold>
-						Select Depth Level
-						{suggestedDepth ? ` (Suggested: ${suggestedDepth})` : ""}:
-					</Text>
+					<Text bold>Select Depth Level:</Text>
 					<SelectInput
 						items={depthOptions}
 						onSelect={handleDepthSelect}
-						initialIndex={initialSelectionIndex}
 					/>
 				</Box>
 			)}

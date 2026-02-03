@@ -46,7 +46,6 @@ export const logger = {
 			const formatted = formatLog("DEBUG", message, args);
 			writeToFile(formatted);
 			logEvents.emit("log", { level: "debug", message, args, formatted });
-			console.debug(`[DEBUG] ${message}`, ...args);
 		}
 	},
 	info: (message: string, ...args: unknown[]) => {
@@ -54,7 +53,6 @@ export const logger = {
 			const formatted = formatLog("INFO", message, args);
 			writeToFile(formatted);
 			logEvents.emit("log", { level: "info", message, args, formatted });
-			console.info(`[INFO] ${message}`, ...args);
 		}
 	},
 	warn: (message: string, ...args: unknown[]) => {
@@ -62,7 +60,6 @@ export const logger = {
 			const formatted = formatLog("WARN", message, args);
 			writeToFile(formatted);
 			logEvents.emit("log", { level: "warn", message, args, formatted });
-			console.warn(`[WARN] ${message}`, ...args);
 		}
 	},
 	error: (message: string, ...args: unknown[]) => {
@@ -70,7 +67,6 @@ export const logger = {
 			const formatted = formatLog("ERROR", message, args);
 			writeToFile(formatted);
 			logEvents.emit("log", { level: "error", message, args, formatted });
-			console.error(`[ERROR] ${message}`, ...args);
 		}
 	},
 };

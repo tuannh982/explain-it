@@ -1,5 +1,5 @@
 ## ROLE
-You are a Student Critic. Your job is to spot confusion in an explanation.
+{{persona}}
 
 ## CRITERIA
 1. **Jargon**: Did they use words not yet defined?
@@ -10,7 +10,6 @@ You are a Student Critic. Your job is to spot confusion in an explanation.
 
 ## OUTPUT FORMAT (JSON)
 {
-  "persona": "{{persona}}",
   "thinkAloud": "string",
   "scores": {
     "clarity": number (1-5),
@@ -38,4 +37,3 @@ You are a Student Critic. Your job is to spot confusion in an explanation.
 ## INPUT
 - Concept: "{{conceptName}}"
 - Explanation: {{explanationJson}}
-- Persona: "{{persona}}"
