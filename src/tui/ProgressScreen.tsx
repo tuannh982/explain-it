@@ -46,6 +46,8 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 	// Refs to hold current values for useInput callback (avoids stale closures)
 	const visibleNodesRef = useRef<FlattenedNode[]>([]);
 	const selectedIndexRef = useRef(0);
+	const activeTabRef = useRef<TabType>("tree");
+	const logsRef = useRef<string[]>([]);
 
 	// Build flattened visible nodes (respecting collapse state)
 	const visibleNodes = useMemo(() => {
@@ -100,6 +102,8 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 	// Keep refs in sync with current values
 	visibleNodesRef.current = visibleNodes;
 	selectedIndexRef.current = selectedIndex;
+	activeTabRef.current = activeTab;
+	logsRef.current = logs;
 
 	// Clamp selected index when visible nodes change
 	useEffect(() => {
@@ -215,14 +219,22 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 	}, [addLog]);
 
 	useInput((input, key) => {
-		// Tab switching with Tab key
-		if (key.tab) {
-			setActiveTab((prev) => (prev === "tree" ? "logs" : "tree"));
+		// Tab switching with Tab key or number keys 1/2
+		if (key.tab || input === "1" || input === "2") {
+			if (input === "1") {
+				setActiveTab("tree");
+			} else if (input === "2") {
+				setActiveTab("logs");
+			} else {
+				setActiveTab((prev) => (prev === "tree" ? "logs" : "tree"));
+			}
 			return;
 		}
 
+		const currentTab = activeTabRef.current;
+
 		// Handle navigation based on active tab
-		if (activeTab === "tree") {
+		if (currentTab === "tree") {
 			const currentNodes = visibleNodesRef.current;
 			const currentIndex = selectedIndexRef.current;
 
@@ -264,7 +276,8 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 			}
 		} else {
 			// Logs tab navigation
-			const maxOffset = Math.max(0, logs.length - LOG_WINDOW_SIZE);
+			const currentLogs = logsRef.current;
+			const maxOffset = Math.max(0, currentLogs.length - LOG_WINDOW_SIZE);
 			if (key.upArrow) {
 				setLogScrollOffset((prev) => Math.max(0, prev - 1));
 			}
@@ -395,7 +408,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 			padding={1}
 			borderStyle="round"
 			borderColor="yellow"
-			height={20}
+			minHeight={20}
 		>
 			{/* Header with phase and help */}
 			<Box justifyContent="space-between">
@@ -408,7 +421,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 						{phase}
 					</Text>
 				</Box>
-				<Text color="gray">Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle</Text>
+				<Text color="gray">1/2/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle</Text>
 			</Box>
 
 			{/* Tab bar */}
@@ -417,14 +430,14 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 					color={activeTab === "tree" ? "cyan" : "gray"}
 					bold={activeTab === "tree"}
 				>
-					[Tree]
+					[1:Tree ({visibleNodes.length})]
 				</Text>
 				<Text> </Text>
 				<Text
 					color={activeTab === "logs" ? "cyan" : "gray"}
 					bold={activeTab === "logs"}
 				>
-					[Logs ({logs.length})]
+					[2:Logs ({logs.length})]
 				</Text>
 			</Box>
 
