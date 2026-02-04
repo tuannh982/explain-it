@@ -1,4 +1,4 @@
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
 import BigText from "ink-big-text";
 import Gradient from "ink-gradient";
 import SelectInput from "ink-select-input";
@@ -6,10 +6,10 @@ import Spinner from "ink-spinner";
 import TextInput from "ink-text-input";
 import type React from "react";
 import { useEffect, useState } from "react";
+import { PERSONA_DEFINITIONS } from "../config/personas.js";
 import type { EventPayload } from "../core/events.js";
 import type { Orchestrator } from "../core/orchestrator.js";
 import { ClarificationScreen } from "./ClarificationScreen.js";
-import { PERSONA_DEFINITIONS } from "../config/personas.js";
 
 export type UserInput = {
 	query: string;
@@ -19,7 +19,8 @@ export type UserInput = {
 
 export interface InputScreenProps {
 	onSubmit: (input: UserInput) => void;
-	orchestrator: Orchestrator;
+	orchestrator?: Orchestrator | null;
+	onCancel?: () => void;
 	initialStep?: number;
 	initialQuery?: string;
 }
@@ -27,6 +28,7 @@ export interface InputScreenProps {
 export const InputScreen: React.FC<InputScreenProps> = ({
 	onSubmit,
 	orchestrator,
+	onCancel,
 	initialStep = 0,
 	initialQuery = "",
 }) => {
@@ -34,6 +36,13 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 	const [step, setStep] = useState(initialStep); // 0 = query, 1 = depth
 	const [isLoading, setIsLoading] = useState(false);
 	const [statusMessage, setStatusMessage] = useState("");
+
+	// Handle escape key to cancel/go back
+	useInput((_input, key) => {
+		if (key.escape && onCancel) {
+			onCancel();
+		}
+	});
 
 	// Clarification state
 	const [clarificationData, setClarificationData] = useState<{
@@ -47,6 +56,8 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 	} | null>(null);
 
 	useEffect(() => {
+		if (!orchestrator) return;
+
 		const events = orchestrator.getEvents();
 		const handleRequestInput = (payload: EventPayload<"request_input">) => {
 			if (payload.question) {
@@ -175,10 +186,7 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 			{step === 1 && (
 				<Box flexDirection="column">
 					<Text bold>Select Depth Level:</Text>
-					<SelectInput
-						items={depthOptions}
-						onSelect={handleDepthSelect}
-					/>
+					<SelectInput items={depthOptions} onSelect={handleDepthSelect} />
 				</Box>
 			)}
 		</Box>

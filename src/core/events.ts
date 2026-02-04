@@ -49,22 +49,57 @@ export interface EventMap {
 
 export type EventType = keyof EventMap;
 
-// 3. Wrapper payload that includes timestamp (for internal use or generic listeners)
+// 3. Wrapper payload that includes timestamp and sessionId (for internal use or generic listeners)
 export type EventPayload<T extends EventType> = EventMap[T] & {
 	timestamp: number;
+	sessionId: string;
 };
 
 export class EventSystem extends EventEmitter {
+	private sessionId: string;
+
+	constructor(sessionId = "default") {
+		super();
+		this.sessionId = sessionId;
+	}
+
+	getSessionId(): string {
+		return this.sessionId;
+	}
+
 	// Overload for specific events
 	emit<T extends EventType>(event: T, payload: EventMap[T]): boolean {
-		return super.emit(event, { ...payload, timestamp: Date.now() });
+		return super.emit(event, {
+			...payload,
+			timestamp: Date.now(),
+			sessionId: this.sessionId,
+		});
 	}
 
 	on<T extends EventType>(
 		event: T,
-		listener: (payload: EventMap[T] & { timestamp: number }) => void,
+		listener: (payload: EventPayload<T>) => void,
 	): this {
 		// biome-ignore lint/suspicious/noExplicitAny: dependent on base EventEmitter
 		return super.on(event, listener as any);
+	}
+
+	pipe(target: EventSystem): void {
+		const eventTypes: EventType[] = [
+			"phase_start",
+			"step_progress",
+			"node_discovered",
+			"node_status_update",
+			"request_input",
+			"error",
+		];
+
+		for (const eventType of eventTypes) {
+			this.on(eventType, (payload) => {
+				// Forward the event with original payload (preserves source sessionId)
+				// biome-ignore lint/suspicious/noExplicitAny: payload type varies by event
+				super.emit.call(target, eventType, payload as any);
+			});
+		}
 	}
 }

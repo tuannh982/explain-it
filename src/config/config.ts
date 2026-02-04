@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { env } from "./env.js";
@@ -70,8 +71,8 @@ export const config = {
 	},
 	paths: {
 		root: path.resolve(__dirname, "../../"),
-		output: path.resolve(__dirname, "../../output"),
 		prompts: path.resolve(__dirname, "../templates/prompts"),
+		sessionsFile: path.join(os.homedir(), ".explain-it", "sessions.json"),
 	},
 	circuitBreaker: {
 		maxValidationAttempts: 2,
@@ -95,6 +96,5 @@ export const config = {
 	retry: {
 		maxRetries: 3,
 		backoffMs: 1000,
-		logFile: "output/logs/llm-failures.jsonl",
 	},
 };

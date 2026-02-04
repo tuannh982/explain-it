@@ -17,7 +17,7 @@ import { ValidatorAgent } from "../agents/validator.js";
 import { config } from "../config/config.js";
 import { MkDocsGenerator } from "../generator/mkdocs-generator.js";
 import { TemplateManager } from "../generator/template-manager.js";
-import { logger } from "../utils/logger.js";
+import { createSessionLogger, type Logger } from "../utils/logger.js";
 import { EventSystem } from "./events.js";
 import { StateManager, type WorkflowPhase } from "./state.js";
 import type {
@@ -43,6 +43,7 @@ export class Orchestrator {
 	private events: EventSystem;
 	private exploredConcepts = new Set<string>();
 	private inputResolver: ((answer: string) => void) | null = null;
+	private logger: Logger;
 
 	// Agents
 	private clarifier = new ClarifierAgent();
@@ -61,10 +62,11 @@ export class Orchestrator {
 
 	private outputDir: string;
 
-	constructor(outputDir: string) {
+	constructor(sessionId: string, outputDir: string) {
 		this.outputDir = outputDir;
-		this.stateManager = new StateManager(outputDir);
-		this.events = new EventSystem();
+		this.stateManager = new StateManager(sessionId, outputDir);
+		this.events = new EventSystem(sessionId);
+		this.logger = createSessionLogger(outputDir);
 		this.templateManager = new TemplateManager(config.paths.root);
 	}
 
@@ -94,7 +96,7 @@ export class Orchestrator {
 			return finalResult;
 		} catch (error: unknown) {
 			const err = error instanceof Error ? error : new Error(String(error));
-			logger.error("Orchestrator Fatal Error:", err);
+			this.logger.error("Orchestrator Fatal Error:", err);
 			this.events.emit("error", { message: err.message });
 			throw err;
 		}
@@ -125,7 +127,7 @@ export class Orchestrator {
 	private updatePhase(phase: WorkflowPhase) {
 		this.stateManager.updateState({ currentPhase: phase });
 		this.events.emit("phase_start", { phase });
-		logger.info(`Phase: ${phase}`);
+		this.logger.info(`Phase: ${phase}`);
 	}
 
 	private async isSimilar(name: string): Promise<boolean> {
@@ -149,13 +151,16 @@ export class Orchestrator {
 				});
 
 				if (result.isSimilar) {
-					logger.info(
+					this.logger.info(
 						`[Similarity] "${name}" effectively duplicate of "${result.similarTo}". Reason: ${result.reasoning}`,
 					);
 					return true;
 				}
 			} catch (error) {
-				logger.error("[Similarity] Agent failed, falling back to false", error);
+				this.logger.error(
+					"[Similarity] Agent failed, falling back to false",
+					error,
+				);
 				return false;
 			}
 		}
@@ -184,7 +189,7 @@ export class Orchestrator {
 		} = task;
 		const isRoot = currentDepth === 0;
 
-		logger.info(
+		this.logger.info(
 			`[Process Task] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`,
 		);
 
@@ -251,15 +256,15 @@ export class Orchestrator {
 
 		const explanationInput = isRoot
 			? {
-				concept: { name: topic },
-				depthLevel: totalDepth,
-				previousConcepts: [],
-			}
+					concept: { name: topic },
+					depthLevel: totalDepth,
+					previousConcepts: [],
+				}
 			: {
-				concept: node,
-				depthLevel: totalDepth,
-				previousConcepts: parentConcepts,
-			};
+					concept: node,
+					depthLevel: totalDepth,
+					previousConcepts: parentConcepts,
+				};
 
 		let explanation = await this.explainer.execute(explanationInput);
 		node.explanation = explanation;
@@ -278,7 +283,7 @@ export class Orchestrator {
 			if (critique.verdict === "PASS") {
 				passed = true;
 			} else {
-				logger.info(
+				this.logger.info(
 					`[Process Task] Critic requested revision for: ${topic} (Iteration ${iterations + 1})`,
 				);
 				const iterationResult = await this.iterator.execute({
@@ -336,7 +341,7 @@ export class Orchestrator {
 
 			const selfScore = decomposition.reflection?.domainCorrectnessScore || 10;
 			if (selfScore < 8) {
-				logger.info(
+				this.logger.info(
 					`[Decomposer] Low self-reflection score (${selfScore}) for "${topic}". Invoking ValidatorAgent...`,
 				);
 				const validation = await this.validator.execute({
@@ -347,7 +352,7 @@ export class Orchestrator {
 				});
 
 				if (validation.verdict === "NEEDS_REDECOMPOSITION") {
-					logger.warn(
+					this.logger.warn(
 						`[Validator] Needs re-decomposition: ${validation.recommendation}`,
 					);
 					const redecomp = await this.redecomposer.execute({
@@ -433,8 +438,11 @@ export class Orchestrator {
 					}
 				} else if (result.status === "rejected") {
 					// Log the failure but continue processing other nodes
-					const errorMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-					logger.warn(`[Orchestrator] Child node failed: ${errorMsg}`);
+					const errorMsg =
+						result.reason instanceof Error
+							? result.reason.message
+							: String(result.reason);
+					this.logger.warn(`[Orchestrator] Child node failed: ${errorMsg}`);
 					this.events.emit("error", { message: `Node failed: ${errorMsg}` });
 				}
 			}
@@ -531,7 +539,7 @@ export class Orchestrator {
 			context,
 		);
 		await this.mkdocs.writePage(fileName, content, this.outputDir);
-		logger.info(`[Incremental Doc] Written: ${fileName}`);
+		this.logger.info(`[Incremental Doc] Written: ${fileName}`);
 	}
 
 	public async clarify(initialQuery: string) {
@@ -594,7 +602,7 @@ export class Orchestrator {
 				history.push({ question: q.question, answer });
 			} else {
 				// No questions and not ready to confirm - break to avoid infinite loop
-				logger.warn(
+				this.logger.warn(
 					"Clarifier returned no questions and not ready to confirm. Proceeding with best effort.",
 				);
 				break;

@@ -8,6 +8,8 @@ import { logEvents } from "../utils/logger.js";
 
 interface ProgressScreenProps {
 	events: EventSystem;
+	sessionTopic?: string;
+	onBack?: () => void;
 }
 
 interface FlattenedNode {
@@ -23,7 +25,11 @@ interface FlattenedNode {
 
 type TabType = "tree" | "logs";
 
-export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
+export const ProgressScreen: React.FC<ProgressScreenProps> = ({
+	events,
+	sessionTopic,
+	onBack,
+}) => {
 	const [phase, setPhase] = useState("Initializing...");
 	const [logs, setLogs] = useState<string[]>([]);
 	const [nodes, setNodes] = useState<Map<string, ConceptNode>>(new Map());
@@ -219,6 +225,12 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 	}, [addLog]);
 
 	useInput((input, key) => {
+		// Back navigation
+		if ((key.escape || input === "b") && onBack) {
+			onBack();
+			return;
+		}
+
 		// Tab switching with Tab key or number keys 1/2
 		if (key.tab || input === "1" || input === "2") {
 			if (input === "1") {
@@ -410,6 +422,16 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 			borderColor="yellow"
 			minHeight={20}
 		>
+			{/* Session header */}
+			{sessionTopic && (
+				<Box marginBottom={1}>
+					<Text bold color="cyan">
+						Session: {sessionTopic}
+					</Text>
+					{onBack && <Text color="gray"> │ [Esc/b] Back to Dashboard</Text>}
+				</Box>
+			)}
+
 			{/* Header with phase and help */}
 			<Box justifyContent="space-between">
 				<Box>
@@ -421,7 +443,9 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({ events }) => {
 						{phase}
 					</Text>
 				</Box>
-				<Text color="gray">1/2/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle</Text>
+				<Text color="gray">
+					1/2/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle
+				</Text>
 			</Box>
 
 			{/* Tab bar */}

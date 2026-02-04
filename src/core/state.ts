@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "fs-extra";
+import type { SessionStatus } from "./session-types.js";
 import type {
 	BuilderOutput,
 	Decomposition,
@@ -20,6 +21,14 @@ export type WorkflowPhase =
 	| "failed";
 
 export interface WorkflowState {
+	// Session metadata
+	sessionId: string;
+	status: SessionStatus;
+	createdAt: string;
+	completedAt?: string;
+	error?: string;
+
+	// Existing fields
 	topic?: Topic;
 	scoutReport?: ScoutReport;
 	decomposition?: Decomposition;
@@ -43,13 +52,16 @@ export class StateManager {
 	private state: WorkflowState;
 	private filePath: string;
 
-	constructor(outputDir: string) {
+	constructor(sessionId: string, outputDir: string) {
 		this.filePath = path.join(outputDir, "state.json");
-		this.state = this.getInitialState();
+		this.state = this.getInitialState(sessionId);
 	}
 
-	private getInitialState(): WorkflowState {
+	private getInitialState(sessionId: string): WorkflowState {
 		return {
+			sessionId,
+			status: "running",
+			createdAt: new Date().toISOString(),
 			explanations: {},
 			currentPhase: "clarify",
 			validationAttempts: 0,
@@ -91,7 +103,20 @@ export class StateManager {
 	}
 
 	reset() {
-		this.state = this.getInitialState();
+		this.state = this.getInitialState(this.state.sessionId);
+		this.saveState();
+	}
+
+	markCompleted() {
+		this.state.status = "completed";
+		this.state.completedAt = new Date().toISOString();
+		this.saveState();
+	}
+
+	markFailed(error: string) {
+		this.state.status = "failed";
+		this.state.error = error;
+		this.state.completedAt = new Date().toISOString();
 		this.saveState();
 	}
 }
