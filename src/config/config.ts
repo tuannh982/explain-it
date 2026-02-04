@@ -1,4 +1,3 @@
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { env } from "./env.js";
@@ -72,14 +71,7 @@ export const config = {
 	paths: {
 		root: path.resolve(__dirname, "../../"),
 		prompts: path.resolve(__dirname, "../templates/prompts"),
-		sessionsFile: path.join(os.homedir(), ".explain-it", "sessions.json"),
 		output: path.resolve(__dirname, "../../output"),
-	},
-	circuitBreaker: {
-		maxValidationAttempts: 2,
-		maxExplainIterations: 3,
-		maxRedecompositions: 2,
-		maxConceptFailures: 0.3, // 30%
 	},
 	scout: {
 		trustedSites: [

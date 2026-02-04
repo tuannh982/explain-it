@@ -1,6 +1,5 @@
 import path from "node:path";
 import fs from "fs-extra";
-import type { SessionStatus } from "./session-types.js";
 import type {
 	BuilderOutput,
 	Decomposition,
@@ -23,7 +22,7 @@ export type WorkflowPhase =
 export interface WorkflowState {
 	// Session metadata
 	sessionId: string;
-	status: SessionStatus;
+	status: "running" | "completed" | "failed" | "interrupted";
 	createdAt: string;
 	completedAt?: string;
 	error?: string;
@@ -117,6 +116,11 @@ export class StateManager {
 		this.state.status = "failed";
 		this.state.error = error;
 		this.state.completedAt = new Date().toISOString();
+		this.saveState();
+	}
+
+	markInterrupted() {
+		this.state.status = "interrupted";
 		this.saveState();
 	}
 }

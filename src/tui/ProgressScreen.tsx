@@ -2,23 +2,14 @@ import { Box, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EventSystem } from "../core/events.js";
+import type { EventManager } from "../core/event-manager.js";
 import type { ConceptNode } from "../core/types.js";
-import { logEvents } from "../utils/logger.js";
-
-interface InitialNodeData {
-	id: string;
-	name: string;
-	status: ConceptNode["status"];
-	parentId?: string;
-}
+import { formatLog } from "../utils/logger.js";
 
 interface ProgressScreenProps {
-	events: EventSystem;
+	events: EventManager;
 	sessionTopic?: string;
-	onBack?: () => void;
-	initialNodes?: InitialNodeData[];
-	initialLogs?: string[];
+	onQuit?: () => void;
 }
 
 interface FlattenedNode {
@@ -32,44 +23,18 @@ interface FlattenedNode {
 	startTime?: number;
 }
 
-type TabType = "tree" | "logs";
+type TabType = "tree" | "tasks" | "logs";
 
 export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	events,
 	sessionTopic,
-	onBack,
-	initialNodes = [],
-	initialLogs = [],
+	onQuit,
 }) => {
 	const [phase, setPhase] = useState("Initializing...");
-	const [logs, setLogs] = useState<string[]>(() => initialLogs);
-	const [nodes, setNodes] = useState<Map<string, ConceptNode>>(() => {
-		const map = new Map<string, ConceptNode>();
-		for (const n of initialNodes) {
-			map.set(n.id, {
-				id: n.id,
-				name: n.name,
-				status: n.status,
-				oneLiner: "",
-				isAtomic: true,
-				dependsOn: [],
-				relativeFilePath: "",
-			});
-		}
-		return map;
-	});
-	const [nodeTree, setNodeTree] = useState<Map<string, string[]>>(() => {
-		const tree = new Map<string, string[]>();
-		for (const n of initialNodes) {
-			if (n.parentId) {
-				const children = tree.get(n.parentId) || [];
-				if (!children.includes(n.id)) {
-					tree.set(n.parentId, [...children, n.id]);
-				}
-			}
-		}
-		return tree;
-	});
+	const [currentNodeName, setCurrentNodeName] = useState<string | null>(null);
+	const [logs, setLogs] = useState<string[]>([]);
+	const [nodes, setNodes] = useState<Map<string, ConceptNode>>(new Map());
+	const [nodeTree, setNodeTree] = useState<Map<string, string[]>>(new Map());
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 	const [nodeSteps, setNodeSteps] = useState<
@@ -81,6 +46,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	const [activeTab, setActiveTab] = useState<TabType>("tree");
 	const [logScrollOffset, setLogScrollOffset] = useState(0);
 	const [isTailing, setIsTailing] = useState(true);
+	const [taskScrollOffset, setTaskScrollOffset] = useState(0);
 
 	const addLog = useCallback((msg: string) => {
 		setLogs((prev) => [...prev, msg]);
@@ -92,6 +58,43 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	const activeTabRef = useRef<TabType>("tree");
 	const logsRef = useRef<string[]>([]);
 	const isTailingRef = useRef(true);
+
+	// Check if all descendants of a node are done
+	const areAllChildrenDone = useCallback(
+		(nodeId: string): boolean => {
+			const children = nodeTree.get(nodeId) || [];
+			if (children.length === 0) return true;
+
+			for (const childId of children) {
+				const childNode = nodes.get(childId);
+				if (!childNode || childNode.status !== "done") {
+					return false;
+				}
+				if (!areAllChildrenDone(childId)) {
+					return false;
+				}
+			}
+			return true;
+		},
+		[nodeTree, nodes],
+	);
+
+	// Get effective status for display (considers children status)
+	const getEffectiveStatus = useCallback(
+		(nodeId: string, originalStatus: ConceptNode["status"]): ConceptNode["status"] => {
+			if (originalStatus !== "done") return originalStatus;
+
+			const children = nodeTree.get(nodeId) || [];
+			if (children.length === 0) return "done";
+
+			// If marked as done but has incomplete children, show as in-progress
+			if (!areAllChildrenDone(nodeId)) {
+				return "in-progress";
+			}
+			return "done";
+		},
+		[nodeTree, areAllChildrenDone],
+	);
 
 	// Build flattened visible nodes (respecting collapse state)
 	const visibleNodes = useMemo(() => {
@@ -122,7 +125,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 			result.push({
 				id,
 				name: node.name,
-				status: node.status,
+				status: getEffectiveStatus(id, node.status),
 				depth,
 				hasChildren,
 				currentStep: stepInfo?.step,
@@ -141,7 +144,30 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 		}
 
 		return result;
-	}, [nodes, nodeTree, collapsedNodes, nodeSteps, nodeStartTimes]);
+	}, [nodes, nodeTree, collapsedNodes, nodeSteps, nodeStartTimes, getEffectiveStatus]);
+
+	// Get pending and in-progress tasks
+	const pendingTasks = useMemo(() => {
+		const tasks: Array<{ id: string; name: string; status: ConceptNode["status"]; step?: string }> = [];
+		for (const [id, node] of nodes) {
+			const effectiveStatus = getEffectiveStatus(id, node.status);
+			if (effectiveStatus === "pending" || effectiveStatus === "in-progress") {
+				const stepInfo = nodeSteps.get(id);
+				tasks.push({
+					id,
+					name: node.name,
+					status: effectiveStatus,
+					step: stepInfo?.step,
+				});
+			}
+		}
+		// Sort: in-progress first, then pending
+		return tasks.sort((a, b) => {
+			if (a.status === "in-progress" && b.status !== "in-progress") return -1;
+			if (a.status !== "in-progress" && b.status === "in-progress") return 1;
+			return 0;
+		});
+	}, [nodes, nodeSteps, getEffectiveStatus]);
 
 	// Keep refs in sync with current values
 	visibleNodesRef.current = visibleNodes;
@@ -159,6 +185,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 
 	// Auto-scroll logs to bottom when new logs arrive (always when tailing is on)
 	const LOG_WINDOW_SIZE = 12;
+	const TASK_WINDOW_SIZE = 10;
 	useEffect(() => {
 		if (isTailing) {
 			const maxOffset = Math.max(0, logs.length - LOG_WINDOW_SIZE);
@@ -166,117 +193,123 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 		}
 	}, [logs.length, isTailing]);
 
+	// Subscribe to EventManager topics
 	useEffect(() => {
-		const handlePhaseStart = (p: { phase: string }) => {
-			setPhase(p.phase.toUpperCase());
-			addLog(`>>> Phase: ${p.phase}`);
-		};
+		// Subscribe to log topic
+		const unsubLog = events.subscribe("log", (event) => {
+			if (event.type === "entry") {
+				const formatted = formatLog(event.level, event.message, event.args);
+				addLog(formatted);
+			}
+		});
 
-		const handleStepProgress = (p: {
-			nodeId: string;
-			step: string;
-			status: string;
-			message?: string;
-		}) => {
-			const { nodeId, step, status, message } = p;
-			if (nodeId) {
-				setNodeSteps((prev) => {
+		// Subscribe to node topic
+		const unsubNode = events.subscribe("node", (event) => {
+			if (event.type === "discovered") {
+				const { node, parentId } = event;
+				if (!node) return;
+				setNodes((prev) => {
 					const next = new Map(prev);
-					next.set(nodeId, { step, status });
+					next.set(node.id, node);
 					return next;
 				});
-			}
-			if (message) addLog(`  - ${message}`);
-		};
-
-		const handleNodeDiscovered = (p: {
-			node: ConceptNode;
-			parentId?: string;
-		}) => {
-			const { node, parentId } = p;
-			if (!node) return;
-			setNodes((prev) => {
-				const next = new Map(prev);
-				next.set(node.id, node);
-				return next;
-			});
-			setNodeStartTimes((prev) => {
-				const next = new Map(prev);
-				next.set(node.id, Date.now());
-				return next;
-			});
-			if (parentId) {
-				setNodeTree((prev) => {
+				setNodeStartTimes((prev) => {
 					const next = new Map(prev);
-					const children = next.get(parentId) || [];
-					if (!children.includes(node.id)) {
-						next.set(parentId, [...children, node.id]);
+					next.set(node.id, Date.now());
+					return next;
+				});
+				if (parentId) {
+					setNodeTree((prev) => {
+						const next = new Map(prev);
+						const children = next.get(parentId) || [];
+						if (!children.includes(node.id)) {
+							next.set(parentId, [...children, node.id]);
+						}
+						return next;
+					});
+				}
+			} else if (event.type === "status_update") {
+				const { nodeId, status } = event;
+				if (!nodeId) return;
+				setNodes((prev) => {
+					const node = prev.get(nodeId);
+					if (!node) return prev;
+					const next = new Map(prev);
+					next.set(nodeId, { ...node, status });
+					return next;
+				});
+				// Update current node name when status changes to in-progress
+				if (status === "in-progress") {
+					const node = nodes.get(nodeId);
+					if (node) {
+						setCurrentNodeName(node.name);
 					}
-					return next;
-				});
+				}
 			}
-		};
+		});
 
-		const handleNodeStatusUpdate = (p: {
-			nodeId: string;
-			status: ConceptNode["status"];
-		}) => {
-			const { nodeId, status } = p;
-			if (!nodeId) return;
-			setNodes((prev) => {
-				const node = prev.get(nodeId);
-				if (!node) return prev;
-				const next = new Map(prev);
-				next.set(nodeId, { ...node, status });
-				return next;
-			});
-		};
+		// Subscribe to workflow topic
+		const unsubWorkflow = events.subscribe("workflow", (event) => {
+			if (event.type === "phase_start") {
+				setPhase(event.phase.toUpperCase());
+				addLog(`>>> Phase: ${event.phase}`);
+			} else if (event.type === "step_progress") {
+				const { nodeId, step, status, message } = event;
+				if (nodeId) {
+					setNodeSteps((prev) => {
+						const next = new Map(prev);
+						next.set(nodeId, { step, status });
+						return next;
+					});
+					// Update current node name when we get step progress
+					const node = nodes.get(nodeId);
+					if (node) {
+						setCurrentNodeName(node.name);
+					}
+				}
+				if (message) addLog(`  - ${message}`);
+			}
+		});
 
-		const handleError = (p: { message: string }) => {
-			addLog(`ERROR: ${p.message}`);
-		};
-
-		events.on("phase_start", handlePhaseStart);
-		events.on("step_progress", handleStepProgress);
-		events.on("node_discovered", handleNodeDiscovered);
-		events.on("node_status_update", handleNodeStatusUpdate);
-		events.on("error", handleError);
+		// Subscribe to error topic
+		const unsubError = events.subscribe("error", (event) => {
+			if (event.type === "error") {
+				addLog(`ERROR: ${event.message}`);
+			}
+		});
 
 		return () => {
-			events.off("phase_start", handlePhaseStart);
-			events.off("step_progress", handleStepProgress);
-			events.off("node_discovered", handleNodeDiscovered);
-			events.off("node_status_update", handleNodeStatusUpdate);
-			events.off("error", handleError);
+			unsubLog();
+			unsubNode();
+			unsubWorkflow();
+			unsubError();
 		};
-	}, [events, addLog]);
-
-	// Subscribe to logger events
-	useEffect(() => {
-		const handleLog = (entry: { level: string; formatted: string }) => {
-			addLog(entry.formatted);
-		};
-		logEvents.on("log", handleLog);
-		return () => {
-			logEvents.off("log", handleLog);
-		};
-	}, [addLog]);
+	}, [events, addLog, nodes]);
 
 	useInput((input, key) => {
-		// Back navigation
-		if ((key.escape || input === "b") && onBack) {
-			onBack();
+		// Quit with Ctrl+C or q
+		if ((key.ctrl && input === "c") || input === "q") {
+			if (onQuit) {
+				onQuit();
+			}
 			return;
 		}
 
-		// Tab switching with Tab key or number keys 1/2
-		if (key.tab || input === "1" || input === "2") {
+		// Tab switching with Tab key or number keys 1/2/3
+		if (key.tab || input === "1" || input === "2" || input === "3") {
 			if (input === "1") {
 				setActiveTab("tree");
 			} else if (input === "2") {
+				setActiveTab("tasks");
+			} else if (input === "3") {
 				setActiveTab("logs");
 			} else {
-				setActiveTab((prev) => (prev === "tree" ? "logs" : "tree"));
+				// Cycle through tabs
+				setActiveTab((prev) => {
+					if (prev === "tree") return "tasks";
+					if (prev === "tasks") return "logs";
+					return "tree";
+				});
 			}
 			return;
 		}
@@ -323,6 +356,15 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 						return next;
 					});
 				}
+			}
+		} else if (currentTab === "tasks") {
+			// Tasks tab navigation
+			const maxOffset = Math.max(0, pendingTasks.length - TASK_WINDOW_SIZE);
+			if (key.upArrow) {
+				setTaskScrollOffset((prev) => Math.max(0, prev - 1));
+			}
+			if (key.downArrow) {
+				setTaskScrollOffset((prev) => Math.min(maxOffset, prev + 1));
 			}
 		} else {
 			// Logs tab controls
@@ -404,6 +446,20 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 		logScrollOffset + LOG_WINDOW_SIZE,
 	);
 
+	// Calculate visible window for tasks
+	const visibleTasks = pendingTasks.slice(
+		taskScrollOffset,
+		taskScrollOffset + TASK_WINDOW_SIZE,
+	);
+
+	// Format the phase display with current node name
+	const getPhaseDisplay = () => {
+		if (currentNodeName) {
+			return `${phase}: ${currentNodeName}`;
+		}
+		return phase;
+	};
+
 	const renderTreeTab = () => (
 		<Box
 			flexDirection="column"
@@ -441,6 +497,45 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 		</Box>
 	);
 
+	const renderTasksTab = () => (
+		<Box
+			flexDirection="column"
+			flexGrow={1}
+			borderStyle="single"
+			borderColor={activeTab === "tasks" ? "cyan" : "gray"}
+			paddingX={1}
+		>
+			{pendingTasks.length === 0 ? (
+				<Text color="gray">No pending tasks...</Text>
+			) : (
+				visibleTasks.map((task) => (
+					<Box key={task.id}>
+						<Text>
+							{getStatusIcon(task.status)}{" "}
+							<Text color={task.status === "in-progress" ? "yellow" : "white"}>
+								{task.name}
+							</Text>
+							{task.step && (
+								<Text color="gray"> [{task.step}...]</Text>
+							)}
+						</Text>
+					</Box>
+				))
+			)}
+			{pendingTasks.length > TASK_WINDOW_SIZE && (
+				<Box justifyContent="space-between">
+					<Text color="gray" dimColor>
+						{taskScrollOffset > 0 ? "↑ more above" : ""}{" "}
+						{taskScrollOffset + TASK_WINDOW_SIZE < pendingTasks.length ? "↓ more below" : ""}
+					</Text>
+					<Text color="gray" dimColor>
+						{pendingTasks.length} tasks
+					</Text>
+				</Box>
+			)}
+		</Box>
+	);
+
 	const renderLogsTab = () => (
 		<Box
 			flexDirection="column"
@@ -474,6 +569,17 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 		</Box>
 	);
 
+	const getHelpText = () => {
+		switch (activeTab) {
+			case "tree":
+				return "1/2/3/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle";
+			case "tasks":
+				return "1/2/3/Tab: switch │ ↑↓: scroll";
+			case "logs":
+				return "1/2/3/Tab: switch │ f: toggle tail │ g: go to end │ ↑↓: scroll (when paused)";
+		}
+	};
+
 	return (
 		<Box
 			flexDirection="column"
@@ -488,7 +594,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 					<Text bold color="cyan">
 						Session: {sessionTopic}
 					</Text>
-					{onBack && <Text color="gray"> │ [Esc/b] Back to Dashboard</Text>}
+					<Text color="gray"> │ [q] Quit</Text>
 				</Box>
 			)}
 
@@ -500,14 +606,10 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 					</Text>
 					<Text bold color="white">
 						{" "}
-						{phase}
+						{getPhaseDisplay()}
 					</Text>
 				</Box>
-				<Text color="gray">
-					{activeTab === "tree"
-						? "1/2/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle"
-						: "1/2/Tab: switch │ f: toggle tail │ g: go to end │ ↑↓: scroll (when paused)"}
-				</Text>
+				<Text color="gray">{getHelpText()}</Text>
 			</Box>
 
 			{/* Tab bar */}
@@ -520,15 +622,24 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 				</Text>
 				<Text> </Text>
 				<Text
+					color={activeTab === "tasks" ? "cyan" : "gray"}
+					bold={activeTab === "tasks"}
+				>
+					[2:Tasks ({pendingTasks.length})]
+				</Text>
+				<Text> </Text>
+				<Text
 					color={activeTab === "logs" ? "cyan" : "gray"}
 					bold={activeTab === "logs"}
 				>
-					[2:Logs ({logs.length})]
+					[3:Logs ({logs.length})]
 				</Text>
 			</Box>
 
 			{/* Tab content */}
-			{activeTab === "tree" ? renderTreeTab() : renderLogsTab()}
+			{activeTab === "tree" && renderTreeTab()}
+			{activeTab === "tasks" && renderTasksTab()}
+			{activeTab === "logs" && renderLogsTab()}
 		</Box>
 	);
 };

@@ -17,8 +17,8 @@ import { ValidatorAgent } from "../agents/validator.js";
 import { config } from "../config/config.js";
 import { MkDocsGenerator } from "../generator/mkdocs-generator.js";
 import { TemplateManager } from "../generator/template-manager.js";
-import { createSessionLogger, type Logger } from "../utils/logger.js";
-import { EventSystem } from "./events.js";
+import { createSessionLogger, type LoggerSubscriber } from "../utils/logger.js";
+import { EventManager } from "./event-manager.js";
 import { StateManager, type WorkflowPhase } from "./state.js";
 import type {
 	Concept,
@@ -41,10 +41,10 @@ interface DecomposeTask {
 
 export class Orchestrator {
 	private stateManager: StateManager;
-	private events: EventSystem;
+	private events: EventManager;
+	private loggerSubscriber: LoggerSubscriber;
 	private exploredConcepts = new Set<string>();
 	private inputResolver: ((answer: string) => void) | null = null;
-	private logger: Logger;
 
 	// Agents
 	private clarifier = new ClarifierAgent();
@@ -66,13 +66,26 @@ export class Orchestrator {
 	constructor(sessionId: string, outputDir: string) {
 		this.outputDir = outputDir;
 		this.stateManager = new StateManager(sessionId, outputDir);
-		this.events = new EventSystem(sessionId);
-		this.logger = createSessionLogger(outputDir);
+		this.events = new EventManager(sessionId);
+		this.loggerSubscriber = createSessionLogger(this.events, outputDir);
 		this.templateManager = new TemplateManager(config.paths.root);
 	}
 
 	getEvents() {
 		return this.events;
+	}
+
+	markInterrupted() {
+		this.stateManager.markInterrupted();
+	}
+
+	private log(level: "debug" | "info" | "warn" | "error", message: string, ...args: unknown[]) {
+		this.events.publish("log", {
+			type: "entry",
+			level,
+			message,
+			args: args.length > 0 ? args : undefined,
+		});
 	}
 
 	async process(topic: string, depth: number, persona: string) {
@@ -108,8 +121,8 @@ export class Orchestrator {
 			return finalResult;
 		} catch (error: unknown) {
 			const err = error instanceof Error ? error : new Error(String(error));
-			this.logger.error("Orchestrator Fatal Error:", err);
-			this.events.emit("error", { message: err.message });
+			this.log("error", "Orchestrator Fatal Error:", err);
+			this.events.publish("error", { type: "error", message: err.message });
 			throw err;
 		}
 	}
@@ -125,7 +138,7 @@ export class Orchestrator {
 	): Promise<string> {
 		return new Promise((resolve) => {
 			this.inputResolver = resolve;
-			this.events.emit("request_input", { question, options, context });
+			this.events.publish("input", { type: "request", question, options, context });
 		});
 	}
 
@@ -138,8 +151,8 @@ export class Orchestrator {
 
 	private updatePhase(phase: WorkflowPhase) {
 		this.stateManager.updateState({ currentPhase: phase });
-		this.events.emit("phase_start", { phase });
-		this.logger.info(`Phase: ${phase}`);
+		this.events.publish("workflow", { type: "phase_start", phase });
+		this.log("info", `Phase: ${phase}`);
 	}
 
 	private async isSimilar(name: string): Promise<boolean> {
@@ -163,13 +176,15 @@ export class Orchestrator {
 				});
 
 				if (result.isSimilar) {
-					this.logger.info(
+					this.log(
+						"info",
 						`[Similarity] "${name}" effectively duplicate of "${result.similarTo}". Reason: ${result.reasoning}`,
 					);
 					return true;
 				}
 			} catch (error) {
-				this.logger.error(
+				this.log(
+					"error",
 					"[Similarity] Agent failed, falling back to false",
 					error,
 				);
@@ -208,7 +223,7 @@ export class Orchestrator {
 
 		// Check if this concept was already explained (for resume)
 		if (!isRoot && existingState.explanations?.[topic]) {
-			this.logger.info(`[Process Task] Skipping already explained: "${topic}"`);
+			this.log("info", `[Process Task] Skipping already explained: "${topic}"`);
 			const existingExplanation = existingState.explanations[topic];
 			const slugBase = this.mkdocs.slugify(topic);
 			const slug = `${sectionPrefix}_${slugBase}`;
@@ -227,8 +242,9 @@ export class Orchestrator {
 			};
 
 			// Emit node as discovered and done
-			this.events.emit("node_discovered", { node, parentId: parentNodeId });
-			this.events.emit("node_status_update", {
+			this.events.publish("node", { type: "discovered", node, parentId: parentNodeId });
+			this.events.publish("node", {
+				type: "status_update",
 				nodeId: node.id,
 				status: "done",
 			});
@@ -243,7 +259,8 @@ export class Orchestrator {
 			};
 		}
 
-		this.logger.info(
+		this.log(
+			"info",
 			`[Process Task] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`,
 		);
 
@@ -267,7 +284,7 @@ export class Orchestrator {
 				status: "pending",
 				relativeFilePath: "index.md",
 			};
-			this.events.emit("node_discovered", { node });
+			this.events.publish("node", { type: "discovered", node });
 		} else {
 			const slugBase = this.mkdocs.slugify(topic);
 			const slug = `${sectionPrefix}_${slugBase}`;
@@ -283,13 +300,15 @@ export class Orchestrator {
 				relativeFilePath: path.join(subDirPath, "index.md"),
 				status: "pending",
 			};
-			this.events.emit("node_discovered", {
+			this.events.publish("node", {
+				type: "discovered",
 				node,
 				parentId: parentNodeId,
 			});
 		}
 
-		this.events.emit("step_progress", {
+		this.events.publish("workflow", {
+			type: "step_progress",
 			nodeId: node.id,
 			step: "processing",
 			status: "started",
@@ -297,12 +316,14 @@ export class Orchestrator {
 		});
 
 		// 2. Discovery / Explanation
-		this.events.emit("node_status_update", {
+		this.events.publish("node", {
+			type: "status_update",
 			nodeId: node.id,
 			status: "in-progress",
 		});
 
-		this.events.emit("step_progress", {
+		this.events.publish("workflow", {
+			type: "step_progress",
 			nodeId: node.id,
 			step: "explaining",
 			status: "started",
@@ -337,7 +358,8 @@ export class Orchestrator {
 			if (critique.verdict === "PASS") {
 				passed = true;
 			} else {
-				this.logger.info(
+				this.log(
+					"info",
 					`[Process Task] Critic requested revision for: ${topic} (Iteration ${iterations + 1})`,
 				);
 				const iterationResult = await this.iterator.execute({
@@ -351,7 +373,8 @@ export class Orchestrator {
 		}
 		node.explanation = explanation;
 
-		this.events.emit("step_progress", {
+		this.events.publish("workflow", {
+			type: "step_progress",
 			nodeId: node.id,
 			step: "explaining",
 			status: "completed",
@@ -366,7 +389,8 @@ export class Orchestrator {
 		}
 
 		this.stateManager.addExplanation(topic, explanation);
-		this.events.emit("node_status_update", {
+		this.events.publish("node", {
+			type: "status_update",
 			nodeId: node.id,
 			status: "done",
 		});
@@ -378,7 +402,8 @@ export class Orchestrator {
 		if (currentDepth < totalDepth) {
 			this.updatePhase("decompose");
 
-			this.events.emit("step_progress", {
+			this.events.publish("workflow", {
+				type: "step_progress",
 				nodeId: node.id,
 				step: "decomposing",
 				status: "started",
@@ -395,7 +420,8 @@ export class Orchestrator {
 
 			const selfScore = decomposition.reflection?.domainCorrectnessScore || 10;
 			if (selfScore < 8) {
-				this.logger.info(
+				this.log(
+					"info",
 					`[Decomposer] Low self-reflection score (${selfScore}) for "${topic}". Invoking ValidatorAgent...`,
 				);
 				const validation = await this.validator.execute({
@@ -406,7 +432,8 @@ export class Orchestrator {
 				});
 
 				if (validation.verdict === "NEEDS_REDECOMPOSITION") {
-					this.logger.warn(
+					this.log(
+						"warn",
 						`[Validator] Needs re-decomposition: ${validation.recommendation}`,
 					);
 					const redecomp = await this.redecomposer.execute({
@@ -473,7 +500,8 @@ export class Orchestrator {
 					);
 				} catch (error) {
 					// Emit failed status so UI updates the node
-					this.events.emit("node_status_update", {
+					this.events.publish("node", {
+						type: "status_update",
 						nodeId: childNodeId,
 						status: "failed",
 					});
@@ -497,15 +525,16 @@ export class Orchestrator {
 						result.reason instanceof Error
 							? result.reason.message
 							: String(result.reason);
-					this.logger.warn(`[Orchestrator] Child node failed: ${errorMsg}`);
-					this.events.emit("error", { message: `Node failed: ${errorMsg}` });
+					this.log("warn", `[Orchestrator] Child node failed: ${errorMsg}`);
+					this.events.publish("error", { type: "error", message: `Node failed: ${errorMsg}` });
 				}
 			}
 
 			node.children = childrenNodes;
 			if (childrenNodes.length > 0) node.isAtomic = false;
 
-			this.events.emit("step_progress", {
+			this.events.publish("workflow", {
+				type: "step_progress",
 				nodeId: node.id,
 				step: "decomposing",
 				status: "completed",
@@ -594,7 +623,7 @@ export class Orchestrator {
 			context,
 		);
 		await this.mkdocs.writePage(fileName, content, this.outputDir);
-		this.logger.info(`[Incremental Doc] Written: ${fileName}`);
+		this.log("info", `[Incremental Doc] Written: ${fileName}`);
 	}
 
 	public async clarify(initialQuery: string) {
@@ -657,7 +686,8 @@ export class Orchestrator {
 				history.push({ question: q.question, answer });
 			} else {
 				// No questions and not ready to confirm - break to avoid infinite loop
-				this.logger.warn(
+				this.log(
+					"warn",
 					"Clarifier returned no questions and not ready to confirm. Proceeding with best effort.",
 				);
 				break;

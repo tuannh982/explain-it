@@ -1,9 +1,7 @@
-import { EventEmitter } from "node:events";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import type { EventManager, LogLevel } from "../core/event-manager.js";
 import { env } from "../config/env.js";
-
-type LogLevel = "debug" | "info" | "warn" | "error";
 
 const levels: Record<LogLevel, number> = {
 	debug: 0,
@@ -12,24 +10,85 @@ const levels: Record<LogLevel, number> = {
 	error: 3,
 };
 
-const currentLevel = levels[env.LOG_LEVEL as LogLevel];
+const currentLevel = levels[env.LOG_LEVEL as LogLevel] ?? levels.info;
 
-// Singleton event emitter for log events
-export const logEvents = new EventEmitter();
+/**
+ * Format a log entry for file output.
+ */
+export function formatLog(
+	level: string,
+	message: string,
+	args?: unknown[],
+): string {
+	const timestamp = new Date().toISOString();
+	const argsStr =
+		args && args.length > 0
+			? " " + args.map((a) => JSON.stringify(a)).join(" ")
+			: "";
+	return `[${timestamp}] [${level.toUpperCase()}] ${message}${argsStr}`;
+}
 
-// Logger interface type
+/**
+ * LoggerSubscriber subscribes to the EventManager's log topic
+ * and writes log entries to a file.
+ */
+export class LoggerSubscriber {
+	private unsubscribe: () => void;
+
+	constructor(eventManager: EventManager, logFile: string) {
+		// Ensure log directory exists
+		const logDir = path.dirname(logFile);
+		try {
+			mkdirSync(logDir, { recursive: true });
+		} catch {
+			// Directory may already exist
+		}
+
+		// Subscribe to log events
+		this.unsubscribe = eventManager.subscribe("log", (event) => {
+			if (event.type === "entry") {
+				// Check log level
+				const eventLevel = levels[event.level];
+				if (eventLevel >= currentLevel) {
+					const formatted = formatLog(event.level, event.message, event.args);
+					try {
+						appendFileSync(logFile, formatted + "\n");
+					} catch {
+						// Silently fail file writes to avoid breaking the app
+					}
+				}
+			}
+		});
+	}
+
+	/**
+	 * Stop listening to log events.
+	 */
+	dispose(): void {
+		this.unsubscribe();
+	}
+}
+
+/**
+ * Creates a LoggerSubscriber for a session that writes to {sessionFolder}/debug.log.
+ */
+export function createSessionLogger(
+	eventManager: EventManager,
+	sessionFolder: string,
+): LoggerSubscriber {
+	const logFile = path.join(sessionFolder, "debug.log");
+	return new LoggerSubscriber(eventManager, logFile);
+}
+
+// =============================================================================
+// Standalone Logger (for components outside EventManager context)
+// =============================================================================
+
 export interface Logger {
 	debug: (message: string, ...args: unknown[]) => void;
 	info: (message: string, ...args: unknown[]) => void;
 	warn: (message: string, ...args: unknown[]) => void;
 	error: (message: string, ...args: unknown[]) => void;
-}
-
-function formatLog(level: string, message: string, args: unknown[]): string {
-	const timestamp = new Date().toISOString();
-	const argsStr =
-		args.length > 0 ? " " + args.map((a) => JSON.stringify(a)).join(" ") : "";
-	return `[${timestamp}] [${level}] ${message}${argsStr}`;
 }
 
 function createWriteToFile(logFile: string): (formatted: string) => void {
@@ -43,7 +102,8 @@ function createWriteToFile(logFile: string): (formatted: string) => void {
 }
 
 /**
- * Internal factory function to create a logger instance that writes to a specific log file.
+ * Creates a standalone logger that writes directly to a file.
+ * Use this for components that don't have access to EventManager.
  */
 function createLoggerInstance(logFile: string): Logger {
 	const writeToFile = createWriteToFile(logFile);
@@ -51,47 +111,34 @@ function createLoggerInstance(logFile: string): Logger {
 	return {
 		debug: (message: string, ...args: unknown[]) => {
 			if (levels.debug >= currentLevel) {
-				const formatted = formatLog("DEBUG", message, args);
+				const formatted = formatLog("debug", message, args);
 				writeToFile(formatted);
-				logEvents.emit("log", { level: "debug", message, args, formatted });
 			}
 		},
 		info: (message: string, ...args: unknown[]) => {
 			if (levels.info >= currentLevel) {
-				const formatted = formatLog("INFO", message, args);
+				const formatted = formatLog("info", message, args);
 				writeToFile(formatted);
-				logEvents.emit("log", { level: "info", message, args, formatted });
 			}
 		},
 		warn: (message: string, ...args: unknown[]) => {
 			if (levels.warn >= currentLevel) {
-				const formatted = formatLog("WARN", message, args);
+				const formatted = formatLog("warn", message, args);
 				writeToFile(formatted);
-				logEvents.emit("log", { level: "warn", message, args, formatted });
 			}
 		},
 		error: (message: string, ...args: unknown[]) => {
 			if (levels.error >= currentLevel) {
-				const formatted = formatLog("ERROR", message, args);
+				const formatted = formatLog("error", message, args);
 				writeToFile(formatted);
-				logEvents.emit("log", { level: "error", message, args, formatted });
 			}
 		},
 	};
 }
 
-/**
- * Creates a session-specific logger that writes to {sessionFolder}/debug.log.
- * Each session can have its own isolated log file.
- */
-export function createSessionLogger(sessionFolder: string): Logger {
-	const logFile = path.join(sessionFolder, "debug.log");
-	return createLoggerInstance(logFile);
-}
-
-// Default logger setup (backwards compatible)
+// Default logger for standalone use (writes to logs/debug.log)
 const logDir = "logs";
-const defaultLogFile = `${logDir}/debug.log`;
+const defaultLogFile = path.join(logDir, "debug.log");
 
 // Ensure log directory exists on startup
 try {
@@ -100,5 +147,8 @@ try {
 	// Directory may already exist
 }
 
-// Export default logger for backwards compatibility
+/**
+ * Default standalone logger for components without EventManager access.
+ * Writes to logs/debug.log.
+ */
 export const logger = createLoggerInstance(defaultLogFile);

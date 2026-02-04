@@ -7,7 +7,7 @@ import TextInput from "ink-text-input";
 import type React from "react";
 import { useEffect, useState } from "react";
 import { PERSONA_DEFINITIONS } from "../config/personas.js";
-import type { EventPayload } from "../core/events.js";
+import type { EventPayload } from "../core/event-manager.js";
 import type { Orchestrator } from "../core/orchestrator.js";
 import { ClarificationScreen } from "./ClarificationScreen.js";
 
@@ -59,8 +59,8 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 		if (!orchestrator) return;
 
 		const events = orchestrator.getEvents();
-		const handleRequestInput = (payload: EventPayload<"request_input">) => {
-			if (payload.question) {
+		const unsubscribe = events.subscribe("input", (payload: EventPayload<"input">) => {
+			if (payload.type === "request" && payload.question) {
 				setClarificationData({
 					question: payload.question,
 					options: payload.options,
@@ -68,11 +68,10 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 				});
 				setIsLoading(false); // Stop loading to show input
 			}
-		};
+		});
 
-		events.on("request_input", handleRequestInput);
 		return () => {
-			events.off("request_input", handleRequestInput);
+			unsubscribe();
 		};
 	}, [orchestrator]);
 

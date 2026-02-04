@@ -2,52 +2,41 @@ import { Box, Text, useInput } from "ink";
 import BigText from "ink-big-text";
 import Gradient from "ink-gradient";
 import type React from "react";
-import type { SessionStatus } from "../core/session-types.js";
 
 interface OutputScreenProps {
 	outputPath: string;
-	onBack?: () => void;
-	sessionStatus?: SessionStatus;
-	onResume?: () => void;
+	sessionStatus?: "completed" | "failed";
+	onQuit?: () => void;
 }
 
 export const OutputScreen: React.FC<OutputScreenProps> = ({
 	outputPath,
-	onBack,
 	sessionStatus = "completed",
-	onResume,
+	onQuit,
 }) => {
-	// Handle escape/b key to go back, r to resume
 	useInput((input, key) => {
-		if ((key.escape || input === "b") && onBack) {
-			onBack();
-		}
-		if (input === "r" && onResume && sessionStatus === "interrupted") {
-			onResume();
+		if ((key.escape || input === "q") && onQuit) {
+			onQuit();
 		}
 	});
 
 	const isCompleted = sessionStatus === "completed";
-	const isInterrupted = sessionStatus === "interrupted";
 	const isFailed = sessionStatus === "failed";
 
 	const getBorderColor = () => {
 		if (isCompleted) return "green";
-		if (isInterrupted) return "yellow";
 		if (isFailed) return "red";
 		return "gray";
 	};
 
 	const getTitle = () => {
 		if (isCompleted) return "Success!";
-		if (isInterrupted) return "Interrupted";
 		if (isFailed) return "Failed";
 		return "Session";
 	};
 
 	const getGradient = () => {
 		if (isCompleted) return "summer";
-		if (isInterrupted) return "morning";
 		if (isFailed) return "retro";
 		return "pastel";
 	};
@@ -55,8 +44,6 @@ export const OutputScreen: React.FC<OutputScreenProps> = ({
 	const getMessage = () => {
 		if (isCompleted)
 			return "Your learning guide has been generated successfully.";
-		if (isInterrupted)
-			return "This session was interrupted and can be resumed.";
 		if (isFailed)
 			return "This session failed. Check the output folder for partial results.";
 		return "Session output";
@@ -92,10 +79,7 @@ export const OutputScreen: React.FC<OutputScreenProps> = ({
 			)}
 
 			<Box marginTop={1} flexDirection="column">
-				{onBack && <Text color="gray">[Esc/b] Back to Dashboard</Text>}
-				{isInterrupted && onResume && (
-					<Text color="yellow">[r] Resume Session</Text>
-				)}
+				{onQuit && <Text color="gray">[Esc/q] Quit</Text>}
 			</Box>
 		</Box>
 	);
