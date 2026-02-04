@@ -2,7 +2,7 @@ import { Box, Text, useApp } from "ink";
 import { useEffect, useState } from "react";
 import { config } from "../config/config.js";
 import { Orchestrator } from "../core/orchestrator.js";
-import { SessionManager } from "../core/session-manager.js";
+import { type ResumeData, SessionManager } from "../core/session-manager.js";
 import type { Session } from "../core/session-types.js";
 import { DashboardScreen } from "./DashboardScreen.js";
 import { ErrorScreen } from "./ErrorScreen.js";
@@ -32,6 +32,7 @@ export const App = () => {
 	);
 	const [isLoaded, setIsLoaded] = useState(false);
 	const [error, setError] = useState<Error | null>(null);
+	const [resumeData, setResumeData] = useState<ResumeData | null>(null);
 
 	// Load sessions on mount
 	useEffect(() => {
@@ -116,45 +117,49 @@ export const App = () => {
 			setSelectedSessionId(session.id);
 			setScreen("progress");
 
-			// Start processing in background
-			orchestrator
-				.process(input.query, input.depth, input.persona)
-				.then(async () => {
-					// Update session status to completed
-					await sessionManager.updateSession(session.id, {
-						status: "completed",
-						completedAt: new Date().toISOString(),
+			// Start processing in background after a brief delay to ensure
+			// ProgressScreen has mounted and subscribed to events
+			setTimeout(() => {
+				orchestrator
+					.process(input.query, input.depth, input.persona)
+					.then(async () => {
+						// Update session status to completed
+						await sessionManager.updateSession(session.id, {
+							status: "completed",
+							completedAt: new Date().toISOString(),
+						});
+						// Remove from running sessions
+						setRunningSessions((prev) => {
+							const next = new Map(prev);
+							next.delete(session.id);
+							return next;
+						});
+						// If still viewing this session, update screen
+						if (selectedSessionId === session.id) {
+							setScreen("output");
+						}
+					})
+					.catch(async (err: unknown) => {
+						const errorMessage =
+							err instanceof Error ? err.message : String(err);
+						await sessionManager.updateSession(session.id, {
+							status: "failed",
+							completedAt: new Date().toISOString(),
+							error: errorMessage,
+						});
+						// Remove from running sessions
+						setRunningSessions((prev) => {
+							const next = new Map(prev);
+							next.delete(session.id);
+							return next;
+						});
+						// If still viewing this session, show error
+						if (selectedSessionId === session.id) {
+							setError(err instanceof Error ? err : new Error(String(err)));
+							setScreen("error");
+						}
 					});
-					// Remove from running sessions
-					setRunningSessions((prev) => {
-						const next = new Map(prev);
-						next.delete(session.id);
-						return next;
-					});
-					// If still viewing this session, update screen
-					if (selectedSessionId === session.id) {
-						setScreen("output");
-					}
-				})
-				.catch(async (err: unknown) => {
-					const errorMessage = err instanceof Error ? err.message : String(err);
-					await sessionManager.updateSession(session.id, {
-						status: "failed",
-						completedAt: new Date().toISOString(),
-						error: errorMessage,
-					});
-					// Remove from running sessions
-					setRunningSessions((prev) => {
-						const next = new Map(prev);
-						next.delete(session.id);
-						return next;
-					});
-					// If still viewing this session, show error
-					if (selectedSessionId === session.id) {
-						setError(err instanceof Error ? err : new Error(String(err)));
-						setScreen("error");
-					}
-				});
+			}, 0);
 		} catch (err: unknown) {
 			setError(err instanceof Error ? err : new Error(String(err)));
 			setScreen("error");
@@ -163,17 +168,102 @@ export const App = () => {
 
 	const handleBackToDashboard = () => {
 		setSelectedSessionId(null);
+		setResumeData(null);
 		setScreen("dashboard");
 	};
 
-	const handleQuit = async () => {
-		// Mark running sessions as interrupted
+	const handleResumeSession = async () => {
+		const session = getSessionData();
+		if (!session || session.status !== "interrupted") return;
+
+		try {
+			// Load previous state and logs for display
+			const loadedResumeData = await sessionManager.loadResumeData(session);
+			setResumeData(loadedResumeData);
+
+			// Update session status back to running
+			await sessionManager.updateSession(session.id, {
+				status: "running",
+			});
+
+			// Create a new orchestrator for the resumed session
+			const orchestrator = new Orchestrator(session.id, session.folderPath);
+
+			// Add to running sessions
+			const newRunning: RunningSession = {
+				session: { ...session, status: "running" },
+				orchestrator,
+			};
+			setRunningSessions((prev) => {
+				const next = new Map(prev);
+				next.set(session.id, newRunning);
+				return next;
+			});
+
+			// Show progress screen
+			setScreen("progress");
+
+			// Resume processing after a brief delay to ensure
+			// ProgressScreen has mounted and subscribed to events
+			setTimeout(() => {
+				orchestrator
+					.process(session.topic, session.depth, session.persona)
+					.then(async () => {
+						await sessionManager.updateSession(session.id, {
+							status: "completed",
+							completedAt: new Date().toISOString(),
+						});
+						setRunningSessions((prev) => {
+							const next = new Map(prev);
+							next.delete(session.id);
+							return next;
+						});
+						if (selectedSessionId === session.id) {
+							setScreen("output");
+						}
+					})
+					.catch(async (err: unknown) => {
+						const errorMessage =
+							err instanceof Error ? err.message : String(err);
+						await sessionManager.updateSession(session.id, {
+							status: "failed",
+							completedAt: new Date().toISOString(),
+							error: errorMessage,
+						});
+						setRunningSessions((prev) => {
+							const next = new Map(prev);
+							next.delete(session.id);
+							return next;
+						});
+						if (selectedSessionId === session.id) {
+							setError(err instanceof Error ? err : new Error(String(err)));
+							setScreen("error");
+						}
+					});
+			}, 0);
+		} catch (err: unknown) {
+			setError(err instanceof Error ? err : new Error(String(err)));
+			setScreen("error");
+		}
+	};
+
+	const handleQuit = () => {
+		// Mark running sessions as interrupted (fire and forget to ensure quick exit)
 		for (const [sessionId] of runningSessions) {
-			await sessionManager.updateSession(sessionId, {
+			sessionManager.updateSession(sessionId, {
 				status: "interrupted",
 			});
 		}
 		exit();
+	};
+
+	const handleDeleteSession = async (session: Session) => {
+		// Don't delete running sessions
+		if (runningSessions.has(session.id)) {
+			return;
+		}
+		// Remove from sessions.json only, keep the files
+		await sessionManager.deleteSession(session.id);
 	};
 
 	// Loading state
@@ -211,6 +301,7 @@ export const App = () => {
 					archivedSessions={archivedSessions}
 					onSelectSession={handleSelectSession}
 					onNewSession={handleNewSession}
+					onDeleteSession={handleDeleteSession}
 					onQuit={handleQuit}
 				/>
 			)}
@@ -226,12 +317,16 @@ export const App = () => {
 					events={selectedOrchestrator.getEvents()}
 					sessionTopic={sessionData?.topic}
 					onBack={handleBackToDashboard}
+					initialNodes={resumeData?.nodes}
+					initialLogs={resumeData?.logs}
 				/>
 			)}
 			{screen === "output" && sessionData && (
 				<OutputScreen
 					outputPath={sessionData.folderPath}
 					onBack={handleBackToDashboard}
+					sessionStatus={sessionData.status}
+					onResume={handleResumeSession}
 				/>
 			)}
 			{screen === "error" && error && <ErrorScreen error={error} />}

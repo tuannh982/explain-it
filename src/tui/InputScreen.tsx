@@ -78,6 +78,10 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 
 	const handleQuerySubmit = async (value: string) => {
 		if (!value.trim()) return;
+		if (!orchestrator) {
+			setStatusMessage("Error: Orchestrator not available");
+			return;
+		}
 		setQuery(value);
 		setIsLoading(true);
 		setStatusMessage("Clarifying topic...");
@@ -100,7 +104,7 @@ export const InputScreen: React.FC<InputScreenProps> = ({
 		setClarificationData(null);
 		setIsLoading(true); // Resume loading while orchestrator processes answer
 		setStatusMessage("Processing answer...");
-		orchestrator.resolveInput(answer);
+		orchestrator?.resolveInput(answer);
 	};
 
 	const handleDepthSelect = (item: {

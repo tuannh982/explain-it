@@ -31,6 +31,7 @@ interface DecomposeTask {
 	topic: string;
 	currentDepth: number;
 	parentConcepts: string[];
+	parentNodeId?: string;
 	currentPath: string;
 	sectionPrefix: string;
 	targetNodes: ConceptNode[];
@@ -76,6 +77,17 @@ export class Orchestrator {
 
 	async process(topic: string, depth: number, persona: string) {
 		try {
+			// Load existing state if resuming
+			await this.stateManager.loadState();
+			const existingState = this.stateManager.getState();
+
+			// Populate exploredConcepts from existing explanations (for resume)
+			if (existingState.explanations) {
+				for (const conceptName of Object.keys(existingState.explanations)) {
+					this.addToExplored(conceptName);
+				}
+			}
+
 			await this.mkdocs.scaffoldProject(topic, this.outputDir);
 
 			const finalResult = await this.processSingleTask(
@@ -183,11 +195,53 @@ export class Orchestrator {
 			topic,
 			currentDepth,
 			parentConcepts,
+			parentNodeId,
 			currentPath,
 			sectionPrefix,
 			rootTopic,
 		} = task;
 		const isRoot = currentDepth === 0;
+		const existingState = this.stateManager.getState();
+		const isResuming =
+			existingState.explanations &&
+			Object.keys(existingState.explanations).length > 0;
+
+		// Check if this concept was already explained (for resume)
+		if (!isRoot && existingState.explanations?.[topic]) {
+			this.logger.info(`[Process Task] Skipping already explained: "${topic}"`);
+			const existingExplanation = existingState.explanations[topic];
+			const slugBase = this.mkdocs.slugify(topic);
+			const slug = `${sectionPrefix}_${slugBase}`;
+			const subDir = path.join(currentPath, slug);
+
+			// Return existing node data
+			const node: ConceptNode = {
+				id: slug,
+				name: topic,
+				oneLiner: existingExplanation.elevatorPitch || "",
+				isAtomic: true,
+				dependsOn: [],
+				relativeFilePath: path.join(subDir, "index.md"),
+				status: "done",
+				explanation: existingExplanation,
+			};
+
+			// Emit node as discovered and done
+			this.events.emit("node_discovered", { node, parentId: parentNodeId });
+			this.events.emit("node_status_update", {
+				nodeId: node.id,
+				status: "done",
+			});
+
+			return {
+				node,
+				indexContent: "",
+				pages: [],
+				tableOfContents: [],
+				stats: { wordCount: 0, readingTime: "0 min" },
+				allExplanations: [existingExplanation],
+			};
+		}
 
 		this.logger.info(
 			`[Process Task] Processing: "${topic}" | Depth: ${currentDepth}/${totalDepth}`,
@@ -199,7 +253,10 @@ export class Orchestrator {
 
 		if (isRoot) {
 			this.updatePhase("scout");
-			this.exploredConcepts.clear();
+			// Only clear explored concepts if not resuming
+			if (!isResuming) {
+				this.exploredConcepts.clear();
+			}
 			this.addToExplored(topic);
 			node = {
 				id: "root",
@@ -228,10 +285,7 @@ export class Orchestrator {
 			};
 			this.events.emit("node_discovered", {
 				node,
-				parentId:
-					parentConcepts.length > 0
-						? parentConcepts[parentConcepts.length - 1]
-						: undefined,
+				parentId: parentNodeId,
 			});
 		}
 
@@ -407,6 +461,7 @@ export class Orchestrator {
 							topic: concept.name,
 							currentDepth: currentDepth + 1,
 							parentConcepts: [...parentConcepts, topic],
+							parentNodeId: node.id,
 							currentPath: subDirPath,
 							sectionPrefix: currentSection,
 							targetNodes: [],

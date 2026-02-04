@@ -5,6 +5,19 @@ import path from "node:path";
 import fs from "fs-extra";
 import { toSnakeCase } from "../utils/slug.js";
 import type { Session, SessionRegistry } from "./session-types.js";
+import type { WorkflowState } from "./state.js";
+import type { ConceptNode } from "./types.js";
+
+export interface ResumeData {
+	nodes: Array<{
+		id: string;
+		name: string;
+		status: ConceptNode["status"];
+		parentId?: string;
+	}>;
+	logs: string[];
+	state: WorkflowState | null;
+}
 
 const REGISTRY_VERSION = 1;
 
@@ -123,5 +136,61 @@ export class SessionManager {
 	async deleteSession(id: string): Promise<void> {
 		this.sessions.delete(id);
 		await this.save();
+	}
+
+	async loadResumeData(session: Session): Promise<ResumeData> {
+		const stateFile = path.join(session.folderPath, "state.json");
+		const logFile = path.join(session.folderPath, "debug.log");
+
+		let state: WorkflowState | null = null;
+		const nodes: ResumeData["nodes"] = [];
+		let logs: string[] = [];
+
+		// Load state.json
+		if (await fs.pathExists(stateFile)) {
+			try {
+				state = await fs.readJSON(stateFile);
+
+				// Build nodes from explanations - root node first
+				if (state?.topic) {
+					nodes.push({
+						id: "root",
+						name: state.topic.confirmedTopic || session.topic,
+						status: "done",
+					});
+				}
+
+				// Add explained concepts as child nodes
+				if (state?.explanations) {
+					for (const [name, explanation] of Object.entries(
+						state.explanations,
+					)) {
+						// Skip root topic
+						if (name === session.topic) continue;
+
+						nodes.push({
+							id: name.toLowerCase().replace(/\s+/g, "-"),
+							name: explanation.conceptName || name,
+							status: "done",
+							parentId: "root", // Simplified - all children of root
+						});
+					}
+				}
+			} catch {
+				// Ignore parse errors
+			}
+		}
+
+		// Load debug.log
+		if (await fs.pathExists(logFile)) {
+			try {
+				const content = await fs.readFile(logFile, "utf-8");
+				logs = content.split("\n").filter((line) => line.trim());
+			} catch {
+				// Ignore read errors
+			}
+		}
+
+		return { nodes, logs, state };
 	}
 }

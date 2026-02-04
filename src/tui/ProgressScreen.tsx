@@ -6,10 +6,19 @@ import type { EventSystem } from "../core/events.js";
 import type { ConceptNode } from "../core/types.js";
 import { logEvents } from "../utils/logger.js";
 
+interface InitialNodeData {
+	id: string;
+	name: string;
+	status: ConceptNode["status"];
+	parentId?: string;
+}
+
 interface ProgressScreenProps {
 	events: EventSystem;
 	sessionTopic?: string;
 	onBack?: () => void;
+	initialNodes?: InitialNodeData[];
+	initialLogs?: string[];
 }
 
 interface FlattenedNode {
@@ -29,11 +38,38 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	events,
 	sessionTopic,
 	onBack,
+	initialNodes = [],
+	initialLogs = [],
 }) => {
 	const [phase, setPhase] = useState("Initializing...");
-	const [logs, setLogs] = useState<string[]>([]);
-	const [nodes, setNodes] = useState<Map<string, ConceptNode>>(new Map());
-	const [nodeTree, setNodeTree] = useState<Map<string, string[]>>(new Map());
+	const [logs, setLogs] = useState<string[]>(() => initialLogs);
+	const [nodes, setNodes] = useState<Map<string, ConceptNode>>(() => {
+		const map = new Map<string, ConceptNode>();
+		for (const n of initialNodes) {
+			map.set(n.id, {
+				id: n.id,
+				name: n.name,
+				status: n.status,
+				oneLiner: "",
+				isAtomic: true,
+				dependsOn: [],
+				relativeFilePath: "",
+			});
+		}
+		return map;
+	});
+	const [nodeTree, setNodeTree] = useState<Map<string, string[]>>(() => {
+		const tree = new Map<string, string[]>();
+		for (const n of initialNodes) {
+			if (n.parentId) {
+				const children = tree.get(n.parentId) || [];
+				if (!children.includes(n.id)) {
+					tree.set(n.parentId, [...children, n.id]);
+				}
+			}
+		}
+		return tree;
+	});
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 	const [nodeSteps, setNodeSteps] = useState<
@@ -44,6 +80,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	);
 	const [activeTab, setActiveTab] = useState<TabType>("tree");
 	const [logScrollOffset, setLogScrollOffset] = useState(0);
+	const [isTailing, setIsTailing] = useState(true);
 
 	const addLog = useCallback((msg: string) => {
 		setLogs((prev) => [...prev, msg]);
@@ -54,6 +91,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	const selectedIndexRef = useRef(0);
 	const activeTabRef = useRef<TabType>("tree");
 	const logsRef = useRef<string[]>([]);
+	const isTailingRef = useRef(true);
 
 	// Build flattened visible nodes (respecting collapse state)
 	const visibleNodes = useMemo(() => {
@@ -110,6 +148,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 	selectedIndexRef.current = selectedIndex;
 	activeTabRef.current = activeTab;
 	logsRef.current = logs;
+	isTailingRef.current = isTailing;
 
 	// Clamp selected index when visible nodes change
 	useEffect(() => {
@@ -118,15 +157,14 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 		}
 	}, [visibleNodes.length, selectedIndex]);
 
-	// Auto-scroll logs to bottom when new logs arrive (only if already near bottom)
+	// Auto-scroll logs to bottom when new logs arrive (always when tailing is on)
 	const LOG_WINDOW_SIZE = 12;
 	useEffect(() => {
-		const maxOffset = Math.max(0, logs.length - LOG_WINDOW_SIZE);
-		// Auto-scroll if we're within 3 lines of the bottom
-		if (logScrollOffset >= maxOffset - 3 || logs.length <= LOG_WINDOW_SIZE) {
+		if (isTailing) {
+			const maxOffset = Math.max(0, logs.length - LOG_WINDOW_SIZE);
 			setLogScrollOffset(maxOffset);
 		}
-	}, [logs.length, logScrollOffset]);
+	}, [logs.length, isTailing]);
 
 	useEffect(() => {
 		const handlePhaseStart = (p: { phase: string }) => {
@@ -287,14 +325,31 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 				}
 			}
 		} else {
-			// Logs tab navigation
+			// Logs tab controls
 			const currentLogs = logsRef.current;
 			const maxOffset = Math.max(0, currentLogs.length - LOG_WINDOW_SIZE);
-			if (key.upArrow) {
-				setLogScrollOffset((prev) => Math.max(0, prev - 1));
+
+			// Toggle tailing with 'f' (follow)
+			if (input === "f") {
+				setIsTailing((prev) => !prev);
+				return;
 			}
-			if (key.downArrow) {
-				setLogScrollOffset((prev) => Math.min(maxOffset, prev + 1));
+
+			// Jump to bottom and resume tailing with 'g' (go to end)
+			if (input === "g") {
+				setLogScrollOffset(maxOffset);
+				setIsTailing(true);
+				return;
+			}
+
+			// Arrow navigation only when NOT tailing
+			if (!isTailingRef.current) {
+				if (key.upArrow) {
+					setLogScrollOffset((prev) => Math.max(0, prev - 1));
+				}
+				if (key.downArrow) {
+					setLogScrollOffset((prev) => Math.min(maxOffset, prev + 1));
+				}
 			}
 		}
 	});
@@ -404,12 +459,17 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 					</Text>
 				))
 			)}
-			{logs.length > LOG_WINDOW_SIZE && (
-				<Text color="gray" dimColor>
-					Showing {logScrollOffset + 1}-
-					{Math.min(logScrollOffset + LOG_WINDOW_SIZE, logs.length)} of{" "}
-					{logs.length}
-				</Text>
+			{logs.length > 0 && (
+				<Box justifyContent="space-between">
+					<Text color="gray" dimColor>
+						{logs.length > LOG_WINDOW_SIZE
+							? `${logScrollOffset + 1}-${Math.min(logScrollOffset + LOG_WINDOW_SIZE, logs.length)} of ${logs.length}`
+							: `${logs.length} lines`}
+					</Text>
+					<Text color={isTailing ? "green" : "yellow"} dimColor>
+						{isTailing ? "● TAILING" : "○ PAUSED"}
+					</Text>
+				</Box>
 			)}
 		</Box>
 	);
@@ -444,7 +504,9 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 					</Text>
 				</Box>
 				<Text color="gray">
-					1/2/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle
+					{activeTab === "tree"
+						? "1/2/Tab: switch │ ↑↓: navigate │ ←→/Enter: toggle"
+						: "1/2/Tab: switch │ f: toggle tail │ g: go to end │ ↑↓: scroll (when paused)"}
 				</Text>
 			</Box>
 

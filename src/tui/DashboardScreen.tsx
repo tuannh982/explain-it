@@ -8,6 +8,7 @@ interface Props {
 	archivedSessions: Session[];
 	onSelectSession: (session: Session) => void;
 	onNewSession: () => void;
+	onDeleteSession: (session: Session) => void;
 	onQuit: () => void;
 }
 
@@ -60,6 +61,7 @@ export const DashboardScreen = ({
 	archivedSessions,
 	onSelectSession,
 	onNewSession,
+	onDeleteSession,
 	onQuit,
 }: Props) => {
 	const [selectedIndex, setSelectedIndex] = useState(0);
@@ -95,6 +97,16 @@ export const DashboardScreen = ({
 
 		if (key.return && currentList.length > 0) {
 			onSelectSession(currentList[selectedIndex]);
+		}
+
+		// Delete session with 'd' or 'x'
+		if ((input === "d" || input === "x") && currentList.length > 0) {
+			onDeleteSession(currentList[selectedIndex]);
+			// Adjust selected index if needed
+			if (selectedIndex >= currentList.length - 1 && selectedIndex > 0) {
+				setSelectedIndex(selectedIndex - 1);
+			}
+			return;
 		}
 
 		// Number keys for quick select (1-9)
@@ -175,8 +187,7 @@ export const DashboardScreen = ({
 			{/* Help */}
 			<Box borderStyle="single" borderColor="gray" paddingX={1}>
 				<Text color="gray">
-					[n] New Session [↑↓] Navigate [Tab] Switch Section [Enter] View [q]
-					Quit
+					[n] New [↑↓] Navigate [Tab] Section [Enter] View [d] Remove [q] Quit
 				</Text>
 			</Box>
 		</Box>

@@ -73,6 +73,7 @@ export const config = {
 		root: path.resolve(__dirname, "../../"),
 		prompts: path.resolve(__dirname, "../templates/prompts"),
 		sessionsFile: path.join(os.homedir(), ".explain-it", "sessions.json"),
+		output: path.resolve(__dirname, "../../output"),
 	},
 	circuitBreaker: {
 		maxValidationAttempts: 2,
@@ -96,5 +97,6 @@ export const config = {
 	retry: {
 		maxRetries: 3,
 		backoffMs: 1000,
+		logFile: "logs/llm-failures.jsonl",
 	},
 };
