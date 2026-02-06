@@ -22,8 +22,13 @@ export class SynthesizerAgent extends BaseAgent {
 		scoutReport: ScoutReport;
 		decomposition: Decomposition;
 		explanations: Explanation[];
-		builderOutput: BuilderOutput;
 	}): Promise<SynthesizerResult> {
+		// First, generate builder output internally
+		const builderOutput = await this.generateBuilderOutput(
+			input.explanations,
+			input.decomposition.depthLevel,
+		);
+
 		// Generate Index/Overview via LLM
 		const conversation = await this.templateRenderer.render("synthesizer", {
 			scoutJson: JSON.stringify(input.scoutReport, null, 2),
@@ -37,7 +42,7 @@ export class SynthesizerAgent extends BaseAgent {
 				null,
 				2,
 			),
-			builderJson: JSON.stringify(input.builderOutput, null, 2),
+			builderJson: JSON.stringify(builderOutput, null, 2),
 		});
 
 		const response = await this.executeLLM(conversation);
@@ -129,5 +134,22 @@ export class SynthesizerAgent extends BaseAgent {
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/^-+|-+$/g, "");
+	}
+
+	private async generateBuilderOutput(
+		explanations: Explanation[],
+		depthLevel: number,
+	): Promise<BuilderOutput> {
+		// Simplify explanations to save context window
+		const simplifiedExplanations = explanations.map((e) => ({
+			name: e.conceptName,
+			code: e.codeExample,
+			why: e.whyExists,
+		}));
+
+		return this.executeLLMWithTemplate<BuilderOutput>("builder", {
+			explanationsJson: JSON.stringify(simplifiedExplanations, null, 2),
+			depthLevel,
+		});
 	}
 }

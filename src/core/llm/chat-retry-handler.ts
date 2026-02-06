@@ -4,8 +4,8 @@ import { config } from "../../config/config.js";
 import { logger } from "../../utils/logger.js";
 
 export interface RetryOptions {
-	maxRetries: number;
 	backoffMs: number;
+	maxBackoffMs: number;
 	logFile: string;
 }
 
@@ -28,8 +28,8 @@ export class ChatRetryHandler {
 
 	constructor() {
 		this.defaultOptions = {
-			maxRetries: config.retry?.maxRetries ?? 3,
 			backoffMs: config.retry?.backoffMs ?? 1000,
+			maxBackoffMs: config.retry?.maxBackoffMs ?? 60000,
 			logFile: config.retry?.logFile ?? "output/logs/llm-failures.jsonl",
 		};
 	}
@@ -46,17 +46,17 @@ export class ChatRetryHandler {
 		context: { agentName: string; templateName?: string },
 	): Promise<T> {
 		const opts = { ...this.defaultOptions, ...options };
-		let lastError: Error | null = null;
+		let attempt = 0;
 
-		for (let attempt = 1; attempt <= opts.maxRetries; attempt++) {
+		while (true) {
+			attempt++;
 			try {
 				return await fn();
 			} catch (error: unknown) {
 				const err = error instanceof Error ? error : new Error(String(error));
-				lastError = err;
 
 				logger.warn(
-					`[${context.agentName}] Attempt ${attempt}/${opts.maxRetries} failed: ${err.message}`,
+					`[${context.agentName}] Attempt ${attempt} failed: ${err.message}`,
 				);
 
 				await this.logFailure(
@@ -74,17 +74,15 @@ export class ChatRetryHandler {
 					opts.logFile,
 				);
 
-				if (attempt < opts.maxRetries) {
-					const delay = opts.backoffMs * 2 ** (attempt - 1);
-					logger.debug(`[${context.agentName}] Retrying in ${delay}ms...`);
-					await this.sleep(delay);
-				}
+				// Exponential backoff capped at maxBackoffMs
+				const delay = Math.min(
+					opts.backoffMs * 2 ** (attempt - 1),
+					opts.maxBackoffMs,
+				);
+				logger.debug(`[${context.agentName}] Retrying in ${delay}ms...`);
+				await this.sleep(delay);
 			}
 		}
-
-		throw new Error(
-			`[${context.agentName}] Failed after ${opts.maxRetries} attempts. Last error: ${lastError?.message}`,
-		);
 	}
 
 	private async logFailure(

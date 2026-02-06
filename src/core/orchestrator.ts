@@ -1,5 +1,4 @@
 import path from "node:path";
-import { BuilderAgent } from "../agents/builder.js";
 // Agents
 import {
 	ClarifierAgent,
@@ -54,7 +53,6 @@ export class Orchestrator {
 	private critic = new CriticAgent();
 	private iterator = new IteratorAgent();
 	private redecomposer = new ReDecomposerAgent();
-	private builder = new BuilderAgent();
 	private synthesizer = new SynthesizerAgent();
 	private similarity = new SimilarityAgent();
 
@@ -149,10 +147,10 @@ export class Orchestrator {
 		}
 	}
 
-	private updatePhase(phase: WorkflowPhase) {
+	private logPhase(phase: WorkflowPhase, nodeName: string) {
 		this.stateManager.updateState({ currentPhase: phase });
 		this.events.publish("workflow", { type: "phase_start", phase });
-		this.log("info", `Phase: ${phase}`);
+		this.log("info", `Phase: ${phase} - ${nodeName}`);
 	}
 
 	private async isSimilar(name: string): Promise<boolean> {
@@ -269,7 +267,7 @@ export class Orchestrator {
 		let subDirPath = currentPath;
 
 		if (isRoot) {
-			this.updatePhase("scout");
+			this.logPhase("scout", topic);
 			// Only clear explored concepts if not resuming
 			if (!isResuming) {
 				this.exploredConcepts.clear();
@@ -400,7 +398,7 @@ export class Orchestrator {
 		const allExplanations: Explanation[] = [explanation];
 
 		if (currentDepth < totalDepth) {
-			this.updatePhase("decompose");
+			this.logPhase("decompose", topic);
 
 			this.events.publish("workflow", {
 				type: "step_progress",
@@ -541,16 +539,8 @@ export class Orchestrator {
 			});
 		}
 
-		// 6. Build
-		this.updatePhase("build");
-		const builderOutput = await this.builder.execute({
-			explanations: allExplanations,
-			depthLevel: totalDepth,
-		});
-		if (isRoot) this.stateManager.updateState({ builderOutput });
-
-		// 7. Synthesize
-		this.updatePhase("synthesize");
+		// 6. Synthesize (includes building)
+		this.logPhase("synthesize", topic);
 		const decompositionContext = {
 			concepts: childrenNodes,
 			depthLevel: totalDepth,
@@ -564,7 +554,6 @@ export class Orchestrator {
 			scoutReport: explanation,
 			decomposition: decompositionContext,
 			explanations: allExplanations,
-			builderOutput,
 		});
 
 		const finalResult = {
@@ -574,7 +563,7 @@ export class Orchestrator {
 		};
 
 		if (isRoot) {
-			this.updatePhase("complete");
+			this.logPhase("complete", topic);
 			await this.mkdocs.generate(topic, finalResult, this.outputDir);
 		}
 

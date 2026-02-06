@@ -87,8 +87,8 @@ export const config = {
 		],
 	},
 	retry: {
-		maxRetries: 3,
 		backoffMs: 1000,
+		maxBackoffMs: 60000,
 		logFile: "logs/llm-failures.jsonl",
 	},
 };

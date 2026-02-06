@@ -14,7 +14,6 @@ export type WorkflowPhase =
 	| "decompose"
 	| "validate"
 	| "explain"
-	| "build"
 	| "synthesize"
 	| "complete"
 	| "failed";
